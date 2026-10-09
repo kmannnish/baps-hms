@@ -1,0 +1,68 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: baps_hms
+      POSTGRES_USER: baps_admin
+      POSTGRES_PASSWORD: change_me_locally
+    # Postgres is intentionally NOT published to a host port. The backend reaches
+    # it over the internal Docker network (PGHOST=postgres), and migrations run
+    # via `docker exec baps-hms-postgres-1 psql ...` (inside the container). With
+    # no host mapping, the database can't be reached from the LAN or the
+    # internet — only the backend (:4000) is ever exposed. To inspect the DB with
+    # a GUI tool, temporarily add `ports: ['5432:5432']` back.
+    volumes:
+      - baps_hms_pgdata:/var/lib/postgresql/data
+      # Postgres runs every .sql file in this folder, alphabetically, on
+      # first boot only (i.e. when the data volume is empty).
+      - ./backend/db/schema.sql:/docker-entrypoint-initdb.d/1-schema.sql:ro
+      - ./backend/db/seed.sql:/docker-entrypoint-initdb.d/2-seed.sql:ro
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U baps_admin -d baps_hms']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PORT: 4000
+      PGHOST: postgres
+      PGPORT: 5432
+      PGDATABASE: baps_hms
+      PGUSER: baps_admin
+      PGPASSWORD: change_me_locally
+      # Secret key + optional email settings come from the untracked .env file,
+      # so updating the code with `git pull` never touches this PC's key. The
+      # installer creates .env (see .env.example).
+      JWT_SECRET: ${JWT_SECRET:?Missing JWT_SECRET - run install-reception.bat to create the .env file}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      SMTP_FROM: ${SMTP_FROM:-}
+      CORS_ORIGIN: "*"
+      # Where automatic/manual DB backups are written (see utils/backup.js).
+      # Mapped to ./backups on the host below, so the .dump files land in a plain
+      # folder on the Reception PC that you can copy to a pen drive.
+      BACKUP_DIR: /app/backups
+    ports:
+      - '4000:4000'
+    volumes:
+      # Persists uploaded ID photos across container restarts/rebuilds —
+      # without this, `docker compose up --build` would wipe them.
+      - baps_hms_uploads:/app/uploads
+      # DB backups on the host (a real folder next to this file, NOT a named
+      # volume) so the operator can see/copy the .dump files directly.
+      - ./backups:/app/backups
+
+volumes:
+  baps_hms_pgdata:
+  baps_hms_uploads:

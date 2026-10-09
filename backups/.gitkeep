@@ -1,0 +1,4 @@
+# This file exists so the ./backups folder ships with the project and the
+# docker-compose bind mount (./backups:/app/backups) has a target directory.
+# Actual DB backup files (baps_hms_*.dump) are written here at runtime and are
+# gitignored — they contain guest data and must never be committed.

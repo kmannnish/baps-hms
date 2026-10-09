@@ -1,0 +1,12 @@
+.env
+frontend/.env
+node_modules/
+frontend/node_modules/
+backend/node_modules/
+frontend/build/
+*.log
+
+# Local DB backups (.dump files) — never commit guest data. The folder itself
+# is kept via backups/.gitkeep so the Docker bind mount has a target.
+backups/*
+!backups/.gitkeep

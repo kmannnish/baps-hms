@@ -1,0 +1,25 @@
+# Keeps the Docker build context small and stops host-built artifacts from
+# overwriting what the image installs/builds (see backend/Dockerfile). The build
+# context is the repo root.
+
+# Installed/built per-stage inside the image — never copy the host's copies in.
+**/node_modules
+frontend/build
+
+# Housekeeping / not needed in the image.
+.git
+.gitignore
+**/*.log
+
+# Secrets/config never belong in an image; real values are injected by compose
+# at run, and the frontend resolves its backend URL at runtime (not baked in).
+# This also keeps frontend/.env.production (a cloud-deploy URL) out of the build.
+.env
+.env.*
+backend/.env
+backend/.env.*
+frontend/.env
+frontend/.env.*
+
+# Local DB backups contain guest data — never bake them into an image.
+backups/*.dump
