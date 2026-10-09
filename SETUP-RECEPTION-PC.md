@@ -23,6 +23,7 @@ Install these **before** anything else:
 | Software | Why | Where to get it | Cost |
 |---|---|---|---|
 | **Docker Desktop** | Runs the app + database | https://www.docker.com/products/docker-desktop | Free |
+| **Git for Windows** | Downloads the app + brings updates | https://git-scm.com/download/win | Free |
 | **Microsoft Edge** | Shows the app full-screen | Already on Windows | Free |
 | **Tailscale** *(optional)* | Public link for guests/Swami Ji | https://tailscale.com/download/windows | Free |
 
@@ -31,16 +32,23 @@ Install these **before** anything else:
 2. Restart the PC if it asks.
 3. Open **Docker Desktop** and wait until the bottom-left says **"Engine running"** (green). The first start can take a couple of minutes.
 
-That's the only must-have. Edge is already there; Tailscale is only for the public link (Part 6).
+**Git for Windows:** download, run the installer, accept all defaults. (Needed to download the app and to pull updates later.)
+
+Docker + Git are the two must-haves. Edge is already on Windows; Tailscale is only for the public link (Part 7).
 
 ---
 
-## Part 2 — Put the project on the PC
+## Part 2 — Get the project onto the PC
 
-1. Copy the **`baps-hms`** project folder (the ZIP, unzipped) onto the Reception PC — e.g. to `C:\baps-hms`.
-2. **Keep it there.** Don't move or delete it after setup — the auto-start points at this folder.
+**Option A — from GitHub (recommended, no file copying).** Needs Git (Part 1). Open PowerShell and run:
+```
+git clone https://github.com/kmannnish/baps-hms.git C:\baps-hms
+```
+Sign in as **kmannnish** when the browser opens (the repo is private). This downloads the whole project into `C:\baps-hms` — no ZIP to copy. Installing this way also lets you get future updates with one double-click (Part 12).
 
-To unzip: right-click the ZIP → **Extract All…** → choose `C:\` → Extract.
+**Option B — from a ZIP (only if you're not using GitHub).** Copy the `baps-hms` ZIP onto the PC → right-click → **Extract All…** → choose `C:\` → Extract.
+
+Either way: **keep the `C:\baps-hms` folder where it is** after setup — the auto-start points at it.
 
 ---
 
@@ -199,47 +207,36 @@ Sends Swami Ji a daily summary email (income, arrivals, departures, next 7 days)
 
 ## Part 12 — Updating later (one-click, via GitHub)
 
-Updates are delivered through a free **private GitHub repo**. Your data is never
-affected — bookings live in Docker's data volume, which updates don't touch (a
-safety backup is also taken automatically before each update).
+The project already lives in a private GitHub repo: **`kmannnish/baps-hms`**. Updates
+flow through it. Your data is never affected — bookings live in Docker's data volume,
+which updates don't touch (and a safety backup is taken automatically before each update).
 
-### One-time setup (on the computer where the code is prepared)
-1. Create a free account at **github.com**, click **New repository** → set it **Private** → name it e.g. `baps-hms` (don't tick "add a README").
-2. Install **Git for Windows** (https://git-scm.com/download/win) if needed.
-3. In the project folder (PowerShell), run these **once** (use your repo's URL):
-   ```
-   git init
-   git add .
-   git commit -m "BAPS HMS v1"
-   git branch -M main
-   git remote add origin https://github.com/YOURNAME/baps-hms.git
-   git push -u origin main
-   ```
-   The first push opens a browser to sign in to GitHub — do that once. (The `.env`
-   file and `backups` are automatically excluded, so your key and guest data never
-   go to GitHub.)
+**Install the Reception PC so it can receive updates:** use **Part 2, Option A** (`git clone`)
+rather than a ZIP. A cloned folder is all that's needed to pull updates.
 
-### Install the Reception PC *from GitHub* (so it can receive updates)
-Instead of copying a ZIP, install **Git for Windows** on the Reception PC, then:
+### To publish an update (on the computer where you prepare changes)
+After making and testing changes:
 ```
-git clone https://github.com/YOURNAME/baps-hms.git C:\baps-hms
+git add .
+git commit -m "what changed"
+git push
 ```
-Sign in to GitHub once when asked, then run `install-reception.bat` (Part 3).
+Plain `git push` — the repo is already connected (no `--force`).
 
-### To push an update (every future time)
-- On the prep computer, after making & testing changes:
-  ```
-  git add .
-  git commit -m "what changed"
-  git push
-  ```
-- On the Reception PC: **double-click `update-reception.bat`**. It takes a safety
-  backup, downloads the update, rebuilds, and applies any new database changes —
-  about 1–2 minutes. Then hard-refresh the app (Ctrl + Shift + R).
+### To receive the update (on the Reception PC)
+**Double-click `update-reception.bat`.** It takes a safety backup, downloads the update,
+rebuilds, and applies any new database changes — about 1–2 minutes. Then hard-refresh the
+app (Ctrl + Shift + R).
 
-> **No GitHub?** You can still update from a fresh ZIP: replace the code files but
-> **keep the `.env` file and the `backups` folder**, then run
-> `docker compose up -d --build`. GitHub + `update-reception.bat` is much easier.
+> **Starting a brand-new repo from scratch** (only if you ever begin again): make a Private
+> repo on github.com, then in the project folder run `git init`, `git add .`,
+> `git commit -m "v1"`, `git branch -M main`,
+> `git remote add origin https://github.com/<you>/<repo>.git`, `git push -u origin main`.
+> (The `.env` file and `backups` are excluded automatically, so your key and guest data
+> never go to GitHub.)
+
+> **No GitHub at all?** You can still update from a fresh ZIP: replace the code files but
+> **keep the `.env` file and the `backups` folder**, then run `docker compose up -d --build`.
 
 ---
 
