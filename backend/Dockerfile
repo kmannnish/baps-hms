@@ -25,14 +25,16 @@ ENV REACT_APP_API_BASE_URL="" \
 RUN npm run build
 
 # ---- Stage 2: the backend runtime (also serves the build from stage 1) ------
-FROM node:20-alpine
+FROM node:20-bookworm-slim
 
-# PostgreSQL client tools (pg_dump / pg_restore) for the backup & restore
-# feature. Pinned to major 16 to match the postgres:16-alpine database — a
-# matching-major client is the safe, fully-supported combination. If you bump
-# the Postgres image to a new major, bump this package to match (e.g.
-# postgresql17-client).
-RUN apk add --no-cache postgresql16-client
+# PostgreSQL client tools (pg_dump / pg_restore) v18 from the official PGDG
+# repo so both local Postgres and managed Postgres 18 (e.g. Neon) work cleanly.
+RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates gnupg \
+    && install -d /usr/share/postgresql-common/pgdg \
+    && curl -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc --fail https://www.postgresql.org/media/keys/ACCC4CF8.asc \
+    && echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt bookworm-pgdg main" > /etc/apt/sources.list.d/pgdg.list \
+    && apt-get update && apt-get install -y --no-install-recommends postgresql-client-18 \
+    && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
