@@ -312,11 +312,11 @@ export default function HistoryReports({
           <div className="relative">
             <Search className="w-3.5 h-3.5 text-[#2B1610]/40 absolute left-2.5 top-1/2 -translate-y-1/2" />
             <input
-              placeholder="Search guest or mobile"
+              placeholder="Search ID, guest, mobile, sant"
               value={filters.search}
               onChange={(e) => setFilters({ ...filters, search: e.target.value })}
               onKeyDown={(e) => e.key === 'Enter' && applyFilters()}
-              className="border border-[#2B1610]/20 bg-white pl-8 pr-3 py-1.5 text-sm w-56"
+              className="border border-[#2B1610]/20 bg-white pl-8 pr-3 py-1.5 text-sm w-64"
             />
           </div>
           <select value={filters.status} onChange={(e) => setFilters({ ...filters, status: e.target.value })}
@@ -386,6 +386,11 @@ export default function HistoryReports({
             {history.map((b) => (
               <tr key={b.id} className="border-b border-[#2B1610]/5">
                 <td className="py-2.5">
+                  {b.booking_code && (
+                    <span className="inline-block font-mono text-[10px] bg-[#2B1610]/5 text-[#2B1610]/70 px-1.5 py-0.5 mb-0.5">
+                      {b.booking_code}
+                    </span>
+                  )}
                   <p className="text-[#2B1610]">{b.guest_name}</p>
                   <p className="text-xs text-[#2B1610]/40">{b.mobile}</p>
                 </td>

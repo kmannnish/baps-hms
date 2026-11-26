@@ -528,7 +528,7 @@ module.exports = function (io) {
          AND ($3::text IS NULL OR b.status = ANY(string_to_array($3, ',')))
          AND ($4::text IS NULL OR b.channel = $4)
          AND ($5::uuid IS NULL OR b.room_type_id = $5)
-         AND ($6::text IS NULL OR b.guest_name ILIKE '%' || $6 || '%' OR b.mobile ILIKE '%' || $6 || '%')
+         AND ($6::text IS NULL OR b.guest_name ILIKE '%' || $6 || '%' OR b.mobile ILIKE '%' || $6 || '%' OR b.booking_code ILIKE '%' || $6 || '%' OR b.sant_reference_name ILIKE '%' || $6 || '%')
        ORDER BY b.created_at DESC
        LIMIT 500`,
       [from || null, to || null, status || null, channel || null, roomTypeId || null, search || null]
