@@ -26,16 +26,73 @@ function mailConfig() {
   return { host, port, user, pass, from };
 }
 
-// The feature is "configured" only when we have a host and credentials. Missing
-// any one of them → the daily email stays off (no crash, no half-send).
+function brevoKey() {
+  return (process.env.BREVO_API_KEY || '').trim();
+}
+
+function parseAddress(raw, fallbackEmail) {
+  const s = String(raw || '').trim();
+  const m = /^(.*?)\s*<([^>]+)>$/.exec(s);
+  if (m) return { name: m[1].trim() || 'BAPS Jaipur Utara', email: m[2].trim() };
+  return { name: 'BAPS Jaipur Utara', email: s || fallbackEmail };
+}
+
+// The feature is "configured" when we have either BREVO_API_KEY (HTTPS, works on
+// Render Free Tier where SMTP ports 465/587 are blocked) or SMTP credentials.
 function isMailConfigured() {
+  if (brevoKey()) return true;
   const { host, user, pass } = mailConfig();
   return Boolean(host && user && pass);
 }
 
-// Returns a nodemailer transport, or null when SMTP isn't configured. Port 465
-// uses implicit TLS; anything else (e.g. 587) uses STARTTLS via secure:false.
+// Returns a nodemailer transport (or a Brevo HTTPS transport with the same
+// .sendMail() interface), or null when mail isn't configured.
 function createTransport() {
+  const apiKey = brevoKey();
+  if (apiKey) {
+    const { user, from } = mailConfig();
+    return {
+      async sendMail({ from: msgFrom, to, subject, text, html, attachments }) {
+        const sender = parseAddress(msgFrom || from, user || 'utarabapsjaipur@gmail.com');
+        const recipients = String(to || '')
+          .split(',')
+          .map((e) => e.trim())
+          .filter(Boolean)
+          .map((email) => ({ email }));
+        const payload = {
+          sender,
+          to: recipients,
+          subject: subject || 'BAPS Jaipur Utara Report',
+          ...(html ? { htmlContent: html } : {}),
+          ...(text ? { textContent: text } : {}),
+        };
+        if (Array.isArray(attachments) && attachments.length > 0) {
+          payload.attachment = attachments
+            .filter((a) => a && a.content)
+            .map((a) => ({
+              name: a.filename || 'attachment.pdf',
+              content: Buffer.isBuffer(a.content)
+                ? a.content.toString('base64')
+                : Buffer.from(a.content).toString('base64'),
+            }));
+        }
+        const res = await fetch('https://api.brevo.com/v3/smtp/email', {
+          method: 'POST',
+          headers: {
+            'api-key': apiKey,
+            'Content-Type': 'application/json',
+            Accept: 'application/json',
+          },
+          body: JSON.stringify(payload),
+        });
+        if (!res.ok) {
+          const errText = await res.text().catch(() => '');
+          throw new Error(`Brevo API ${res.status}: ${errText}`);
+        }
+        return res.json();
+      },
+    };
+  }
   const { host, port, user, pass } = mailConfig();
   if (!host || !user || !pass) return null;
   return nodemailer.createTransport({
