@@ -218,7 +218,9 @@ export function NewWalkInModal({ roomTypes, apiBaseUrl, token, initialRoom = nul
   const [approvalNote, setApprovalNote] = useState('');
   const [collectNow, setCollectNow] = useState(false);
   const [payAmount, setPayAmount] = useState('');
+  const [payAmountEdited, setPayAmountEdited] = useState(false);
   const [payMethod, setPayMethod] = useState('cash');
+  const [taxCfg, setTaxCfg] = useState({ enabled: true, gstPercent: 5 });
   const [availableRooms, setAvailableRooms] = useState([]);
   const [selectedRoomIds, setSelectedRoomIds] = useState(initialRoom?.id ? [initialRoom.id] : []);
   const [loadingRooms, setLoadingRooms] = useState(false);
@@ -247,6 +249,10 @@ export function NewWalkInModal({ roomTypes, apiBaseUrl, token, initialRoom = nul
       if (walkinCfg && typeof walkinCfg === 'object') {
         setFieldRules((prev) => ({ ...prev, ...walkinCfg }));
       }
+      setTaxCfg({
+        enabled: s?.tax_enabled !== false,
+        gstPercent: Number(s?.gst_percent ?? 5) || 0,
+      });
     });
     fetchArray(`${apiBaseUrl}/inventory/addons`).then((list) => {
       if (active) setAddons(list);
@@ -288,6 +294,33 @@ export function NewWalkInModal({ roomTypes, apiBaseUrl, token, initialRoom = nul
     });
     return () => { active = false; };
   }, [checkinNow, form.roomTypeId, form.numRooms, apiBaseUrl, token, initialRoom]);
+
+  const selectedRt = roomTypes.find((rt) => rt.id === form.roomTypeId);
+  const nights = form.checkinDate && form.checkoutDate
+    ? Math.max(1, Math.round((new Date(form.checkoutDate) - new Date(form.checkinDate)) / 86400000))
+    : 1;
+  const baseRoomTotal = (Number(selectedRt?.base_price) || 0) * form.numRooms * nights;
+  const afterDiscount = billingTier === 'foc'
+    ? 0
+    : billingTier === 'discount'
+    ? baseRoomTotal * (1 - Math.min(100, Math.max(0, Number(discountPercent) || 0)) / 100)
+    : baseRoomTotal;
+  const withGst = taxCfg.enabled ? afterDiscount * (1 + taxCfg.gstPercent / 100) : afterDiscount;
+  const addonsTotal = addons.reduce((sum, a) => sum + (Number(a.price) || 0) * (selectedAddons[a.id] || 0), 0);
+  const estimatedTotal = Math.round(withGst + addonsTotal);
+
+  useEffect(() => {
+    if (!payAmountEdited) {
+      setPayAmount(estimatedTotal > 0 ? String(estimatedTotal) : '');
+    }
+  }, [estimatedTotal, payAmountEdited]);
+
+  const SUGGESTED_NOTES = [
+    'Approved by Swami Ji on phone',
+    'Approved by Swami Ji on WhatsApp',
+    'Walk-in approved at desk',
+    'Sant reference',
+  ];
 
   const toggleRoom = (id) => {
     setSelectedRoomIds((prev) => {
@@ -606,13 +639,33 @@ export function NewWalkInModal({ roomTypes, apiBaseUrl, token, initialRoom = nul
                 ))}
               </div>
               {billingTier === 'discount' && (
-                <input
-                  type="number" min={0} max={100} placeholder="Discount % (e.g. 50)"
-                  value={discountPercent}
-                  onChange={(e) => setDiscountPercent(Number(e.target.value))}
-                  className="border border-[#2B1610]/20 bg-white px-2.5 py-1.5 text-xs w-40"
-                />
+                <div className="flex flex-wrap items-center gap-2">
+                  <div className="flex items-center border border-[#2B1610]/20 bg-white">
+                    <input
+                      type="number" min={0} max={100} placeholder="0"
+                      value={discountPercent}
+                      onChange={(e) => setDiscountPercent(Math.min(100, Math.max(0, Number(e.target.value))))}
+                      className="px-2.5 py-1.5 text-xs w-20 focus:outline-none"
+                    />
+                    <span className="px-2 py-1.5 text-xs bg-[#2B1610]/5 text-[#2B1610]/70 border-l border-[#2B1610]/15">% off</span>
+                  </div>
+                  <span className="text-xs text-[#2B1610]/60">
+                    ₹{Math.round(baseRoomTotal).toLocaleString('en-IN')} − {discountPercent || 0}% = <strong>₹{Math.round(afterDiscount).toLocaleString('en-IN')}</strong>
+                  </span>
+                </div>
               )}
+
+              {/* Live calculated total */}
+              <div className="flex items-center justify-between bg-white/80 border border-[#2B1610]/10 px-2.5 py-1.5 text-xs">
+                <span className="text-[#2B1610]/60">
+                  Estimated total ({nights} night{nights > 1 ? 's' : ''}
+                  {taxCfg.enabled && billingTier !== 'foc' ? ` + ${taxCfg.gstPercent}% GST` : ''}
+                  {addonsTotal > 0 ? ` + ₹${addonsTotal.toLocaleString('en-IN')} add-ons` : ''})
+                </span>
+                <span className="font-serif text-sm font-semibold text-[#2B1610]">
+                  ₹{estimatedTotal.toLocaleString('en-IN')}
+                </span>
+              </div>
 
               {checkinNow && billingTier !== 'foc' && (
                 <div className="pt-1">
@@ -620,7 +673,12 @@ export function NewWalkInModal({ roomTypes, apiBaseUrl, token, initialRoom = nul
                     <input
                       type="checkbox"
                       checked={collectNow}
-                      onChange={(e) => setCollectNow(e.target.checked)}
+                      onChange={(e) => {
+                        setCollectNow(e.target.checked);
+                        if (e.target.checked && !payAmountEdited) {
+                          setPayAmount(estimatedTotal > 0 ? String(estimatedTotal) : '');
+                        }
+                      }}
                       className="accent-[#4A6D5C]"
                     />
                     Collect payment now
@@ -630,9 +688,18 @@ export function NewWalkInModal({ roomTypes, apiBaseUrl, token, initialRoom = nul
                       <input
                         type="number" min={1} placeholder="Amount ₹"
                         value={payAmount}
-                        onChange={(e) => setPayAmount(e.target.value)}
+                        onChange={(e) => { setPayAmountEdited(true); setPayAmount(e.target.value); }}
                         className="border border-[#2B1610]/20 bg-white px-2.5 py-1.5 text-xs flex-1"
                       />
+                      {payAmountEdited && estimatedTotal > 0 && Number(payAmount) !== estimatedTotal && (
+                        <button
+                          type="button"
+                          onClick={() => { setPayAmountEdited(false); setPayAmount(String(estimatedTotal)); }}
+                          className="border border-[#2B1610]/20 bg-white px-2 py-1.5 text-[11px] text-[#B8792F] hover:bg-[#B8792F]/10"
+                        >
+                          Reset ₹{estimatedTotal}
+                        </button>
+                      )}
                       <select
                         value={payMethod}
                         onChange={(e) => setPayMethod(e.target.value)}
@@ -647,12 +714,30 @@ export function NewWalkInModal({ roomTypes, apiBaseUrl, token, initialRoom = nul
                 </div>
               )}
 
-              <input
-                placeholder="Approval note (optional, e.g. Swami Ji phone)"
-                value={approvalNote}
-                onChange={(e) => setApprovalNote(e.target.value)}
-                className="border border-[#2B1610]/20 bg-white px-2.5 py-1.5 text-xs w-full"
-              />
+              <div>
+                <div className="flex flex-wrap gap-1 mb-1.5">
+                  {SUGGESTED_NOTES.map((noteText) => (
+                    <button
+                      type="button"
+                      key={noteText}
+                      onClick={() => setApprovalNote(noteText)}
+                      className={`text-[11px] px-2 py-0.5 border transition-colors ${
+                        approvalNote === noteText
+                          ? 'border-[#B8792F] bg-[#B8792F]/15 text-[#2B1610]'
+                          : 'border-[#2B1610]/15 bg-white text-[#2B1610]/60 hover:border-[#2B1610]/30'
+                      }`}
+                    >
+                      {noteText}
+                    </button>
+                  ))}
+                </div>
+                <input
+                  placeholder="Approval note (pick above or type custom)"
+                  value={approvalNote}
+                  onChange={(e) => setApprovalNote(e.target.value)}
+                  className="border border-[#2B1610]/20 bg-white px-2.5 py-1.5 text-xs w-full"
+                />
+              </div>
 
               {addons.length > 0 && (
                 <div className="pt-2 border-t border-[#2B1610]/10">
@@ -769,7 +854,9 @@ function DecisionModal({ booking, roomTypes, apiBaseUrl, token, onCancel, onDeci
   const [submitting, setSubmitting] = useState(false);
   const [collectNow, setCollectNow] = useState(false);
   const [payAmount, setPayAmount] = useState('');
+  const [payAmountEdited, setPayAmountEdited] = useState(false);
   const [payMethod, setPayMethod] = useState('cash');
+  const [taxCfg, setTaxCfg] = useState({ enabled: true, gstPercent: 5 });
   const [checkinNow, setCheckinNow] = useState(false);
   const [availableRooms, setAvailableRooms] = useState([]);
   const [selectedRoomIds, setSelectedRoomIds] = useState([]);
@@ -788,6 +875,33 @@ function DecisionModal({ booking, roomTypes, apiBaseUrl, token, onCancel, onDeci
       setLoadingRooms(false);
     });
   }, [checkinNow, apiBaseUrl, token, booking.room_type_id, needed]);
+
+  const selectedRt = roomTypes.find((rt) => rt.id === form.roomTypeId);
+  const nights = form.checkinDate && form.checkoutDate
+    ? Math.max(1, Math.round((new Date(form.checkoutDate) - new Date(form.checkinDate)) / 86400000))
+    : 1;
+  const baseRoomTotal = (Number(selectedRt?.base_price) || 0) * form.numRooms * nights;
+  const afterDiscount = billingTier === 'foc'
+    ? 0
+    : billingTier === 'discount'
+    ? baseRoomTotal * (1 - Math.min(100, Math.max(0, Number(discountPercent) || 0)) / 100)
+    : baseRoomTotal;
+  const withGst = taxCfg.enabled ? afterDiscount * (1 + taxCfg.gstPercent / 100) : afterDiscount;
+  const addonsTotal = addons.reduce((sum, a) => sum + (Number(a.price) || 0) * (selectedAddons[a.id] || 0), 0);
+  const estimatedTotal = Math.round(withGst + addonsTotal);
+
+  useEffect(() => {
+    if (!payAmountEdited) {
+      setPayAmount(estimatedTotal > 0 ? String(estimatedTotal) : '');
+    }
+  }, [estimatedTotal, payAmountEdited]);
+
+  const SUGGESTED_NOTES = [
+    'Approved by Swami Ji on phone',
+    'Approved by Swami Ji on WhatsApp',
+    'Walk-in approved at desk',
+    'Sant reference',
+  ];
 
   const toggleRoom = (id) => {
     setSelectedRoomIds((prev) => {

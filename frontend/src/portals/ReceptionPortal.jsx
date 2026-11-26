@@ -1156,13 +1156,22 @@ function RoomActionModal({ room, onClose, onViewId, onQuickCheckin, onSetStatus,
           {balance > 0 && (
             <div className="border border-[#2B1610]/10 p-3 mb-3 space-y-2">
               <p className="text-xs font-medium text-[#2B1610]/60 uppercase tracking-wide">Record payment</p>
-              <input
-                type="number" min={1} max={balance} step="0.01"
-                placeholder={`Amount (max ₹${balance.toLocaleString('en-IN')})`}
-                value={payAmount}
-                onChange={(e) => setPayAmount(e.target.value)}
-                className="border border-[#2B1610]/20 bg-white px-2 py-1.5 text-sm w-full"
-              />
+              <div className="flex gap-2">
+                <input
+                  type="number" min={1} max={balance} step="0.01"
+                  placeholder={`Amount (max ₹${balance.toLocaleString('en-IN')})`}
+                  value={payAmount}
+                  onChange={(e) => setPayAmount(e.target.value)}
+                  className="border border-[#2B1610]/20 bg-white px-2 py-1.5 text-sm flex-1"
+                />
+                <button
+                  type="button"
+                  onClick={() => setPayAmount(String(balance))}
+                  className="border border-[#4A6D5C]/40 text-[#4A6D5C] px-2.5 py-1.5 text-xs hover:bg-[#4A6D5C]/10 shrink-0"
+                >
+                  Full (₹{balance.toLocaleString('en-IN')})
+                </button>
+              </div>
               <div className="flex gap-2">
                 {['cash', 'upi', 'card'].map((m) => (
                   <label
@@ -1232,12 +1241,15 @@ function RoomActionModal({ room, onClose, onViewId, onQuickCheckin, onSetStatus,
                 ))}
               </div>
               {billingTier === 'discount' && (
-                <input
-                  type="number" min={0} max={100} placeholder="% off"
-                  value={discountPercent}
-                  onChange={(e) => setDiscountPercent(Number(e.target.value))}
-                  className="border border-[#2B1610]/20 bg-white px-2 py-1.5 text-sm w-full"
-                />
+                <div className="flex items-center border border-[#2B1610]/20 bg-white w-36">
+                  <input
+                    type="number" min={0} max={100} placeholder="0"
+                    value={discountPercent}
+                    onChange={(e) => setDiscountPercent(Math.min(100, Math.max(0, Number(e.target.value))))}
+                    className="px-2 py-1.5 text-sm w-full focus:outline-none"
+                  />
+                  <span className="px-2 py-1.5 text-xs bg-[#2B1610]/5 text-[#2B1610]/70 border-l border-[#2B1610]/15">% off</span>
+                </div>
               )}
               <button
                 onClick={() => { onEditBilling(currentGuest.bookingId, billingTier, discountPercent); setEditingBilling(false); }}
