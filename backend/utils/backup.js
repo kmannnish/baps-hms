@@ -200,6 +200,11 @@ async function restoreBackup(slot) {
       // restore data-only in parent-before-child table order so all foreign keys
       // are satisfied cleanly.
       const pool = require('../db');
+      const { rows: existingTblRows } = await pool.query(
+        `SELECT tablename FROM pg_tables WHERE schemaname = 'public'`
+      );
+      const existingTables = new Set(existingTblRows.map((r) => r.tablename));
+
       await pool.query(`
         DO $$
         DECLARE r RECORD;
@@ -217,7 +222,10 @@ async function restoreBackup(slot) {
         if (!trimmed || trimmed.startsWith(';')) continue;
         const m = /^\d+;\s+\d+\s+\d+\s+TABLE DATA\s+\S+\s+(\S+)/.exec(trimmed);
         if (m) {
-          dataLines.push({ table: m[1].replace(/^"|"$/g, ''), line: trimmed });
+          const tbl = m[1].replace(/^"|"$/g, '');
+          if (existingTables.has(tbl)) {
+            dataLines.push({ table: tbl, line: trimmed });
+          }
         }
       }
 
