@@ -16,7 +16,7 @@ const { requireAuth } = require('../middleware/requireAuth');
 const { requirePermission } = require('../middleware/requirePermission');
 const { asyncHandler } = require('../utils/asyncHandler');
 const { getDiningData } = require('../utils/bhojanData');
-const { sendBhojanReport } = require('../mailer/bhojanReport');
+const { sendBhojanReport, buildWhatsAppUrl } = require('../mailer/bhojanReport');
 
 const pool = require('../db');
 const router = express.Router();
@@ -24,7 +24,17 @@ const router = express.Router();
 // Live dining counts for today. Any signed-in staff member may read it (it
 // drives the Current Guests dining panel, which Reception uses).
 router.get('/today', requireAuth, asyncHandler(async (req, res) => {
-  res.json(await getDiningData(pool));
+  const data = await getDiningData(pool);
+  const { rows } = await pool.query(
+    `SELECT key, value FROM settings WHERE key IN ('org_name', 'bhojanshala_mobile')`
+  );
+  const settings = Object.fromEntries(rows.map((r) => [r.key, r.value]));
+  const orgName = settings.org_name || 'BAPS Jaipur Utara';
+  const dateStr = data.date
+    ? new Date(`${data.date}T00:00:00`).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+    : '';
+  const whatsappUrl = buildWhatsAppUrl(settings, data, orgName, dateStr);
+  res.json({ ...data, whatsappUrl });
 }));
 
 // Send today's count to the Bhojanshala department right now. This is the desk

@@ -123,19 +123,29 @@ export default function BhojanPanel({ apiBaseUrl, token, socket }) {
           <h3 className="font-serif text-lg text-[#2B1610]">Bhojanshala</h3>
           <span className="text-sm text-[#2B1610]/40">· {fmtDate(data.date)}</span>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <button
             onClick={load}
             className="flex items-center gap-1.5 border border-[#2B1610]/20 text-[#2B1610]/70 px-3 py-2 text-sm hover:border-[#2B1610]/40"
           >
             <RefreshCw className="w-3.5 h-3.5" /> Refresh
           </button>
+          {data.whatsappUrl && (
+            <a
+              href={data.whatsappUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="flex items-center gap-1.5 bg-[#4A6D5C] text-white px-4 py-2 text-sm hover:opacity-90"
+            >
+              <MessageCircle className="w-3.5 h-3.5" /> Send WhatsApp
+            </a>
+          )}
           <button
             onClick={sendToKitchen}
             disabled={sending}
             className="flex items-center gap-1.5 bg-[#2B1610] text-[#F8F4EC] px-4 py-2 text-sm hover:bg-[#3d2118] disabled:opacity-60"
           >
-            <Send className="w-3.5 h-3.5" /> {sending ? 'Sending…' : 'Send to Bhojanshala'}
+            <Send className="w-3.5 h-3.5" /> {sending ? 'Sending…' : 'Send Email'}
           </button>
         </div>
       </div>

@@ -116,13 +116,14 @@ function composeHtml(data, orgName, dateStr) {
 // no number is configured.
 function buildWhatsAppUrl(settings, data, orgName, dateStr) {
   const raw = typeof settings.bhojanshala_mobile === 'string' ? settings.bhojanshala_mobile.trim() : '';
-  const digits = raw.replace(/[^\d]/g, '');
-  if (!digits) return null;
+  let digits = raw.replace(/[^\d]/g, '');
+  if (digits.length === 10) digits = `91${digits}`;
   const summary = [
     `${orgName} — Bhojanshala Count`,
     dateStr,
     ...MEALS.map((meal) => `${MEAL_LABEL[meal]}: ${data.meals[meal].total} (M${data.meals[meal].men}/W${data.meals[meal].women}/K${data.meals[meal].children})`),
   ].join('\n');
+  if (!digits) return `https://wa.me/?text=${encodeURIComponent(summary)}`;
   return `https://wa.me/${digits}?text=${encodeURIComponent(summary)}`;
 }
 
