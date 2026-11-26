@@ -101,6 +101,14 @@ export default function App() {
           <Route path="/unauthorized" element={<UnauthorizedScreen />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
+        <footer className="border-t border-[#2B1610]/10 bg-[#F8F4EC] px-6 py-4 text-center text-xs text-[#2B1610]/60">
+          <span>For help &amp; support: </span>
+          <span className="font-medium text-[#2B1610]">Manish Kumawat</span>
+          <span> · </span>
+          <a href="tel:9511565884" className="hover:underline text-[#B8792F]">9511565884</a>
+          <span> · </span>
+          <a href="mailto:mannnishkumawat@gmail.com" className="hover:underline text-[#B8792F]">mannnishkumawat@gmail.com</a>
+        </footer>
       </BrowserRouter>
     </AuthProvider>
   );
