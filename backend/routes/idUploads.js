@@ -22,10 +22,81 @@
 const express = require('express');
 const multer = require('multer');
 const path = require('path');
+const fs = require('fs');
 const crypto = require('crypto');
+const pool = require('../db');
+const { requireAuth } = require('../middleware/requireAuth');
+const { requirePermission } = require('../middleware/requirePermission');
 
 const UPLOAD_DIR = path.join(__dirname, '..', 'uploads', 'id-photos');
 const SESSION_TTL_MS = 10 * 60 * 1000; // 10 minutes — plenty for "scan and snap"
+
+function getCloudinaryConfig() {
+  const cloudName = (process.env.CLOUDINARY_CLOUD_NAME || '').trim();
+  const apiKey = (process.env.CLOUDINARY_API_KEY || '').trim();
+  const apiSecret = (process.env.CLOUDINARY_API_SECRET || '').trim();
+  if (!cloudName || !apiKey || !apiSecret) return null;
+  return { cloudName, apiKey, apiSecret };
+}
+
+function signCloudinary(params, apiSecret) {
+  const sorted = Object.keys(params)
+    .sort()
+    .map((k) => `${k}=${params[k]}`)
+    .join('&');
+  return crypto.createHash('sha1').update(`${sorted}${apiSecret}`).digest('hex');
+}
+
+async function uploadToCloudinary(file, publicId) {
+  const cfg = getCloudinaryConfig();
+  if (!cfg) return null;
+  const timestamp = Math.floor(Date.now() / 1000);
+  const folder = 'baps-hms-ids';
+  const signature = signCloudinary({ folder, public_id: publicId, timestamp }, cfg.apiSecret);
+  const buf = fs.readFileSync(file.path);
+  const fd = new FormData();
+  fd.append('file', new Blob([buf], { type: file.mimetype || 'image/jpeg' }), file.originalname || 'id.jpg');
+  fd.append('api_key', cfg.apiKey);
+  fd.append('timestamp', String(timestamp));
+  fd.append('folder', folder);
+  fd.append('public_id', publicId);
+  fd.append('signature', signature);
+
+  const res = await fetch(`https://api.cloudinary.com/v1_1/${cfg.cloudName}/image/upload`, {
+    method: 'POST',
+    body: fd,
+  });
+  if (!res.ok) {
+    const errText = await res.text().catch(() => '');
+    throw new Error(`Cloudinary upload failed (${res.status}): ${errText}`);
+  }
+  const data = await res.json();
+  try { fs.unlinkSync(file.path); } catch { /* remove temp local file */ }
+  return data.secure_url;
+}
+
+function extractCloudinaryPublicId(url) {
+  const m = /\/upload\/(?:v\d+\/)?(baps-hms-ids\/[^.?#]+?)(?:\.[a-z0-9]+)?(?:[?#]|$)/i.exec(String(url || ''));
+  return m ? m[1] : null;
+}
+
+async function deleteFromCloudinary(url) {
+  const cfg = getCloudinaryConfig();
+  const publicId = extractCloudinaryPublicId(url);
+  if (!cfg || !publicId) return false;
+  const timestamp = Math.floor(Date.now() / 1000);
+  const signature = signCloudinary({ public_id: publicId, timestamp }, cfg.apiSecret);
+  const fd = new FormData();
+  fd.append('public_id', publicId);
+  fd.append('api_key', cfg.apiKey);
+  fd.append('timestamp', String(timestamp));
+  fd.append('signature', signature);
+  const res = await fetch(`https://api.cloudinary.com/v1_1/${cfg.cloudName}/image/destroy`, {
+    method: 'POST',
+    body: fd,
+  });
+  return res.ok;
+}
 
 // In-memory session store: sessionId -> { status, createdAt, imageUrl? }
 const sessions = new Map();
@@ -38,7 +109,10 @@ function cleanupExpiredSessions() {
 }
 
 const storage = multer.diskStorage({
-  destination: (req, file, cb) => cb(null, UPLOAD_DIR),
+  destination: (req, file, cb) => {
+    fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+    cb(null, UPLOAD_DIR);
+  },
   filename: (req, file, cb) => {
     // Use the session id (or a fresh random id for /direct) as the filename
     // so re-uploads to the same session simply overwrite the old photo.
@@ -61,6 +135,88 @@ const upload = multer({
 
 module.exports = function (io) {
   const router = express.Router();
+
+  // GET /id-uploads/stats — count stored IDs + whether Cloudinary is active
+  router.get('/stats', requireAuth, requirePermission('can_manage_backups'), async (req, res) => {
+    try {
+      const { rows } = await pool.query(
+        `SELECT COUNT(*)::int AS count,
+                MIN(checkin_date) AS oldest_date
+         FROM bookings
+         WHERE id_document_url IS NOT NULL AND id_document_url <> ''`
+      );
+      res.json({
+        count: rows[0]?.count ?? 0,
+        oldestDate: rows[0]?.oldest_date || null,
+        cloudinaryConfigured: Boolean(getCloudinaryConfig()),
+      });
+    } catch (err) {
+      res.status(500).json({ error: 'STATS_FAILED', message: err.message });
+    }
+  });
+
+  // POST /id-uploads/purge — delete ID images for a specific month/year or before it
+  // body: { year: 2026, month: 'ALL' | 1..12, mode: 'exact' | 'before' }
+  router.post('/purge', requireAuth, requirePermission('can_manage_backups'), async (req, res) => {
+    try {
+      const year = parseInt(req.body?.year, 10);
+      const rawMonth = req.body?.month;
+      const mode = req.body?.mode === 'before' ? 'before' : 'exact';
+      if (!Number.isFinite(year) || year < 2000 || year > 2100) {
+        return res.status(400).json({ error: 'INVALID_YEAR', message: 'Please select a valid year.' });
+      }
+
+      let startDate;
+      let endDate;
+      if (rawMonth === 'ALL' || !rawMonth) {
+        startDate = `${year}-01-01`;
+        endDate = `${year + 1}-01-01`;
+      } else {
+        const m = parseInt(rawMonth, 10);
+        if (!Number.isFinite(m) || m < 1 || m > 12) {
+          return res.status(400).json({ error: 'INVALID_MONTH', message: 'Please select a valid month.' });
+        }
+        const mm = String(m).padStart(2, '0');
+        startDate = `${year}-${mm}-01`;
+        const nextY = m === 12 ? year + 1 : year;
+        const nextM = String(m === 12 ? 1 : m + 1).padStart(2, '0');
+        endDate = `${nextY}-${nextM}-01`;
+      }
+
+      const whereClause = mode === 'before'
+        ? `checkin_date < $1`
+        : `checkin_date >= $1 AND checkin_date < $2`;
+      const params = mode === 'before' ? [startDate] : [startDate, endDate];
+
+      const { rows } = await pool.query(
+        `SELECT id, id_document_url FROM bookings
+         WHERE id_document_url IS NOT NULL AND id_document_url <> '' AND ${whereClause}`,
+        params
+      );
+
+      let deletedFiles = 0;
+      for (const row of rows) {
+        const url = row.id_document_url;
+        if (/res\.cloudinary\.com/i.test(url)) {
+          try { if (await deleteFromCloudinary(url)) deletedFiles++; } catch { /* ignore */ }
+        } else if (url.startsWith('/uploads/id-photos/')) {
+          const localPath = path.join(UPLOAD_DIR, path.basename(url));
+          try { if (fs.existsSync(localPath)) { fs.unlinkSync(localPath); deletedFiles++; } } catch { /* ignore */ }
+        }
+      }
+
+      if (rows.length > 0) {
+        await pool.query(
+          `UPDATE bookings SET id_document_url = NULL, updated_at = now() WHERE id = ANY($1::uuid[])`,
+          [rows.map((r) => r.id)]
+        );
+      }
+
+      res.json({ purged: rows.length, deletedFiles });
+    } catch (err) {
+      res.status(500).json({ error: 'PURGE_FAILED', message: err.message });
+    }
+  });
 
   /**
    * POST /id-uploads/session
@@ -88,7 +244,7 @@ module.exports = function (io) {
       return res.status(404).json({ error: 'SESSION_NOT_FOUND_OR_EXPIRED' });
     }
 
-    upload.single('photo')(req, res, (err) => {
+    upload.single('photo')(req, res, async (err) => {
       if (err) {
         return res.status(400).json({ error: 'UPLOAD_FAILED', message: err.message });
       }
@@ -96,7 +252,14 @@ module.exports = function (io) {
         return res.status(400).json({ error: 'NO_FILE_PROVIDED' });
       }
 
-      const imageUrl = `/uploads/id-photos/${req.file.filename}`;
+      let imageUrl = `/uploads/id-photos/${req.file.filename}`;
+      try {
+        const cloudUrl = await uploadToCloudinary(req.file, `qr_${sessionId}`);
+        if (cloudUrl) imageUrl = cloudUrl;
+      } catch (cloudErr) {
+        return res.status(500).json({ error: 'CLOUD_UPLOAD_FAILED', message: cloudErr.message });
+      }
+
       sessions.set(sessionId, { status: 'uploaded', createdAt: Date.now(), imageUrl });
 
       // Notify the PC in real time — same Socket.io connection the rest of
@@ -125,14 +288,21 @@ module.exports = function (io) {
    * needed; returns the file URL synchronously.
    */
   router.post('/direct/upload', (req, res) => {
-    upload.single('photo')(req, res, (err) => {
+    upload.single('photo')(req, res, async (err) => {
       if (err) {
         return res.status(400).json({ error: 'UPLOAD_FAILED', message: err.message });
       }
       if (!req.file) {
         return res.status(400).json({ error: 'NO_FILE_PROVIDED' });
       }
-      res.status(201).json({ imageUrl: `/uploads/id-photos/${req.file.filename}` });
+      let imageUrl = `/uploads/id-photos/${req.file.filename}`;
+      try {
+        const cloudUrl = await uploadToCloudinary(req.file, `id_${crypto.randomUUID()}`);
+        if (cloudUrl) imageUrl = cloudUrl;
+      } catch (cloudErr) {
+        return res.status(500).json({ error: 'CLOUD_UPLOAD_FAILED', message: cloudErr.message });
+      }
+      res.status(201).json({ imageUrl });
     });
   });
 

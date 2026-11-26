@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   DatabaseBackup, Save, Loader2, Download, RotateCcw, AlertTriangle,
-  Clock, CheckCircle2, HardDrive, Upload,
+  Clock, CheckCircle2, HardDrive, Upload, Trash2, Image as ImageIcon,
 } from 'lucide-react';
 import { fetchObject } from '../lib/api';
 
@@ -71,6 +71,46 @@ export default function BackupManager({ apiBaseUrl, token }) {
   const [restoreTarget, setRestoreTarget] = useState(null);
   const [restoring, setRestoring] = useState(false);
   const [uploadingRestore, setUploadingRestore] = useState(false);
+
+  // Guest ID storage & cleanup
+  const [idStats, setIdStats] = useState({ count: 0, oldestDate: null, cloudinaryConfigured: false });
+  const [purgeYear, setPurgeYear] = useState(new Date().getFullYear());
+  const [purgeMonth, setPurgeMonth] = useState(String(new Date().getMonth() + 1));
+  const [purgeMode, setPurgeMode] = useState('exact'); // 'exact' | 'before'
+  const [purging, setPurging] = useState(false);
+  const [purgeMsg, setPurgeMsg] = useState(null);
+
+  const loadIdStats = useCallback(async () => {
+    const stats = await fetchObject(`${apiBaseUrl}/id-uploads/stats`, { headers: { Authorization: `Bearer ${token}` } }, null);
+    if (stats && typeof stats.count === 'number') setIdStats(stats);
+  }, [apiBaseUrl, token]);
+
+  useEffect(() => { loadIdStats(); }, [loadIdStats]);
+
+  const purgeIds = async () => {
+    const label = purgeMonth === 'ALL'
+      ? `all of ${purgeYear}`
+      : `${new Date(2000, Number(purgeMonth) - 1, 1).toLocaleString('en', { month: 'long' })} ${purgeYear}`;
+    const desc = purgeMode === 'before' ? `before ${label}` : `for ${label}`;
+    if (!window.confirm(`Delete all stored guest ID photos ${desc}? Booking records will be kept.`)) return;
+    setPurging(true);
+    setPurgeMsg(null);
+    try {
+      const res = await fetch(`${apiBaseUrl}/id-uploads/purge`, {
+        method: 'POST',
+        headers: authHeaders,
+        body: JSON.stringify({ year: purgeYear, month: purgeMonth, mode: purgeMode }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.message || 'Could not delete IDs.');
+      setPurgeMsg({ ok: true, text: `Deleted ${data.purged} ID record(s) (${data.deletedFiles} file(s) removed).` });
+      loadIdStats();
+    } catch (err) {
+      setPurgeMsg({ ok: false, text: err.message });
+    } finally {
+      setPurging(false);
+    }
+  };
 
   const uploadAndRestore = async (e) => {
     const file = e.target.files?.[0];
@@ -444,6 +484,72 @@ export default function BackupManager({ apiBaseUrl, token }) {
               <RotateCcw className="w-3.5 h-3.5" /> Restore
             </button>
           </div>
+        )}
+      </div>
+
+      {/* Guest ID storage & cleanup */}
+      <div>
+        <h3 className="font-serif text-lg text-[#2B1610] flex items-center gap-2 mb-1">
+          <ImageIcon className="w-4 h-4 text-[#B8792F]" /> Guest ID photos (storage &amp; cleanup)
+        </h3>
+        <p className="text-xs text-[#2B1610]/50 mb-3">
+          {idStats.cloudinaryConfigured
+            ? 'Permanent cloud storage active (Cloudinary — 25 GB free). '
+            : 'Using local server disk (add CLOUDINARY_* env vars in Render for permanent cloud storage). '}
+          Currently storing <strong>{idStats.count}</strong> ID photo(s)
+          {idStats.oldestDate ? ` (oldest: ${String(idStats.oldestDate).slice(0, 10)})` : ''}.
+        </p>
+
+        <div className="border border-[#2B1610]/10 bg-white/40 p-4 flex flex-wrap items-end gap-3">
+          <div>
+            <label className="text-[11px] uppercase tracking-wide text-[#2B1610]/50 block mb-1">Action</label>
+            <select
+              value={purgeMode}
+              onChange={(e) => setPurgeMode(e.target.value)}
+              className="border border-[#2B1610]/20 bg-white px-2.5 py-1.5 text-sm"
+            >
+              <option value="exact">Delete for selected month/year</option>
+              <option value="before">Delete everything before</option>
+            </select>
+          </div>
+          <div>
+            <label className="text-[11px] uppercase tracking-wide text-[#2B1610]/50 block mb-1">Month</label>
+            <select
+              value={purgeMonth}
+              onChange={(e) => setPurgeMonth(e.target.value)}
+              className="border border-[#2B1610]/20 bg-white px-2.5 py-1.5 text-sm"
+            >
+              <option value="ALL">All months (whole year)</option>
+              {Array.from({ length: 12 }, (_, i) => (
+                <option key={i + 1} value={String(i + 1)}>
+                  {new Date(2000, i, 1).toLocaleString('en', { month: 'long' })}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="text-[11px] uppercase tracking-wide text-[#2B1610]/50 block mb-1">Year</label>
+            <input
+              type="number" min="2020" max="2099"
+              value={purgeYear}
+              onChange={(e) => setPurgeYear(Number(e.target.value) || new Date().getFullYear())}
+              className="border border-[#2B1610]/20 bg-white px-2.5 py-1.5 text-sm w-24"
+            />
+          </div>
+          <button
+            type="button"
+            onClick={purgeIds}
+            disabled={purging || idStats.count === 0}
+            className="flex items-center gap-1.5 border border-[#8C3B3B] text-[#8C3B3B] px-4 py-1.5 text-sm hover:bg-[#8C3B3B]/10 disabled:opacity-40"
+          >
+            {purging ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+            Delete IDs
+          </button>
+        </div>
+        {purgeMsg && (
+          <p className={`text-xs mt-2 ${purgeMsg.ok ? 'text-[#4A6D5C]' : 'text-[#8C3B3B]'}`}>
+            {purgeMsg.text}
+          </p>
         )}
       </div>
 
