@@ -13,12 +13,16 @@ import { fetchArray, fetchObject } from '../lib/api';
 export default function CustomerPortal({ apiBaseUrl }) {
   const [roomTypes, setRoomTypes] = useState([]);
   const [termsText, setTermsText] = useState('');
+  const [formConfig, setFormConfig] = useState(null);
 
   useEffect(() => {
     fetchArray(`${apiBaseUrl}/inventory/room-types`).then((rows) =>
       setRoomTypes(rows.map((rt) => ({ id: rt.id, name: rt.name, basePrice: rt.base_price })))
     );
-    fetchObject(`${apiBaseUrl}/settings`).then((s) => setTermsText(s.terms_and_conditions ?? ''));
+    fetchObject(`${apiBaseUrl}/settings`).then((s) => {
+      setTermsText(s.terms_and_conditions ?? '');
+      setFormConfig(s.booking_form_config?.online ?? null);
+    });
   }, [apiBaseUrl]);
 
   const handleSubmit = async (payload) => {
@@ -41,6 +45,7 @@ export default function CustomerPortal({ apiBaseUrl }) {
         apiBaseUrl={apiBaseUrl}
         onSubmit={handleSubmit}
         termsText={termsText}
+        formConfig={formConfig}
       />
     </div>
   );

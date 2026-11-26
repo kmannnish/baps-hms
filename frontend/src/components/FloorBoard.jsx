@@ -22,8 +22,12 @@ const STATUS_STYLES = {
 };
 
 function RoomSlot({ room, onSelectRoom }) {
-  const style = STATUS_STYLES[room.status] ?? STATUS_STYLES.ready;
+  const isPartial = room.isShared && room.occupiedCount > 0 && room.occupiedCount < (room.bedCount || 1);
+  const style = isPartial
+    ? { bg: '#C77A34', label: `${room.occupiedCount}/${room.bedCount} ${room.isHall ? 'pax' : 'beds'}` }
+    : (STATUS_STYLES[room.status] ?? STATUS_STYLES.ready);
   const isOverstayWarning = room.status === 'occupied' && room.checkoutTime && new Date(room.checkoutTime) < new Date();
+  const unit = room.isHall ? 'pax' : 'beds';
   return (
     <button
       onClick={() => onSelectRoom?.(room)}
@@ -32,8 +36,13 @@ function RoomSlot({ room, onSelectRoom }) {
       }`}
       style={{ borderLeft: `4px solid ${style.bg}` }}
     >
-      <div className="flex w-full items-center justify-between">
+      <div className="flex w-full items-center justify-between gap-2">
         <span className="font-serif text-lg text-[#2B1610]">{room.roomNumber}</span>
+        {room.isShared && (
+          <span className="text-[10px] px-1.5 py-0.5 bg-[#2B1610]/5 text-[#2B1610]/60">
+            {room.occupiedCount || 0}/{room.bedCount || 1} {unit}
+          </span>
+        )}
       </div>
       <span className="text-[11px] uppercase tracking-wide text-[#2B1610]/40">
         {room.roomType}
@@ -43,11 +52,17 @@ function RoomSlot({ room, onSelectRoom }) {
           className="inline-block w-2 h-2 rounded-full"
           style={{ backgroundColor: style.bg }}
         />
-        <span className="text-xs text-[#2B1610]/60">{style.label}</span>
+        <span className="text-xs text-[#2B1610]/60">
+          {room.isShared && room.status !== 'maintenance' && !isPartial
+            ? (room.occupiedCount >= (room.bedCount || 1) ? 'Full' : `Ready (${(room.bedCount || 1) - (room.occupiedCount || 0)} free)`)
+            : style.label}
+        </span>
       </div>
-      {room.guestName && (
+      {room.activeGuests?.length > 1 ? (
+        <span className="text-xs text-[#2B1610]/50 truncate w-full">{room.activeGuests.length} active bookings</span>
+      ) : room.guestName ? (
         <span className="text-xs text-[#2B1610]/50 truncate w-full">{room.guestName}</span>
-      )}
+      ) : null}
       {isOverstayWarning && (
         <span className="text-[10px] text-[#8C3B3B] font-medium mt-0.5">Overstay warning</span>
       )}

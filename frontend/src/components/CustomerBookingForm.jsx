@@ -22,10 +22,20 @@ import { Info, Users, Calendar, Phone, User, CheckCircle2, AlertCircle, X, Clock
  * props.onSubmit: (payload) => Promise
  * props.apiBaseUrl: string  // e.g. 'https://api.bapsjaipur.org'
  */
-export default function CustomerBookingForm({ roomTypes = [], onSubmit, apiBaseUrl, termsText }) {
+export default function CustomerBookingForm({ roomTypes = [], onSubmit, apiBaseUrl, termsText, formConfig = null }) {
+  const rules = {
+    guestCity: 'optional',
+    santReferenceName: 'required',
+    santReferenceMobile: 'optional',
+    preferredArrivalTime: 'optional',
+    preferredDepartureTime: 'optional',
+    ...(formConfig || {}),
+  };
+
   const [form, setForm] = useState({
     guestName: '',
     mobile: '',
+    guestCity: '',
     paxMen: 1,
     paxWomen: 0,
     paxChildren: 0,
@@ -76,9 +86,13 @@ export default function CustomerBookingForm({ roomTypes = [], onSubmit, apiBaseU
 
   const validate = () => {
     if (!form.guestName || !form.mobile) return 'Name and mobile are required.';
+    if (rules.guestCity === 'required' && !form.guestCity.trim()) return 'City / Address is required.';
     if (!form.checkinDate || !form.checkoutDate) return 'Please select check-in and check-out dates.';
     if (new Date(form.checkoutDate) <= new Date(form.checkinDate)) return 'Check-out must be after check-in.';
-    if (!form.santReferenceName || !form.santReferenceMobile) return 'Sant reference name and number are required.';
+    if (rules.santReferenceName === 'required' && !form.santReferenceName.trim()) return 'Sant reference name is required.';
+    if (rules.santReferenceMobile === 'required' && !form.santReferenceMobile.trim()) return 'Sant reference number is required.';
+    if (rules.preferredArrivalTime === 'required' && !form.preferredArrivalTime) return 'Expected arrival time is required.';
+    if (rules.preferredDepartureTime === 'required' && !form.preferredDepartureTime) return 'Expected departure time is required.';
     if (!form.roomTypeId) return 'Please select a room type.';
     if (isRoomTypeFull(form.roomTypeId)) return 'That room type is fully booked for these dates. Please pick another.';
     return null;
@@ -152,6 +166,16 @@ export default function CustomerBookingForm({ roomTypes = [], onSubmit, apiBaseU
             placeholder="+91 XXXXX XXXXX"
           />
         </Field>
+        {rules.guestCity !== 'hidden' && (
+          <Field label={`City / Address ${rules.guestCity === 'required' ? '*' : '(optional)'}`}>
+            <input
+              value={form.guestCity}
+              onChange={(e) => update({ guestCity: e.target.value })}
+              className="w-full border border-[#2B1610]/20 bg-white px-3 py-2.5 text-sm text-[#2B1610] focus:outline-none focus:border-[#B8792F]"
+              placeholder="City or address"
+            />
+          </Field>
+        )}
       </div>
 
       {/* Pax */}
@@ -210,24 +234,30 @@ export default function CustomerBookingForm({ roomTypes = [], onSubmit, apiBaseU
       </div>
 
       {/* Sant reference */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <Field label="Sant reference — name">
-          <input
-            value={form.santReferenceName}
-            onChange={(e) => update({ santReferenceName: e.target.value })}
-            className="w-full border border-[#2B1610]/20 bg-white px-3 py-2.5 text-sm text-[#2B1610] focus:outline-none focus:border-[#B8792F]"
-            placeholder="Referring Sant's name"
-          />
-        </Field>
-        <Field label="Sant reference — number">
-          <input
-            value={form.santReferenceMobile}
-            onChange={(e) => update({ santReferenceMobile: e.target.value })}
-            className="w-full border border-[#2B1610]/20 bg-white px-3 py-2.5 text-sm text-[#2B1610] focus:outline-none focus:border-[#B8792F]"
-            placeholder="Referring Sant's mobile"
-          />
-        </Field>
-      </div>
+      {(rules.santReferenceName !== 'hidden' || rules.santReferenceMobile !== 'hidden') && (
+        <div className={`grid grid-cols-1 ${rules.santReferenceName !== 'hidden' && rules.santReferenceMobile !== 'hidden' ? 'sm:grid-cols-2' : ''} gap-4`}>
+          {rules.santReferenceName !== 'hidden' && (
+            <Field label={`Sant reference — name ${rules.santReferenceName === 'required' ? '*' : '(optional)'}`}>
+              <input
+                value={form.santReferenceName}
+                onChange={(e) => update({ santReferenceName: e.target.value })}
+                className="w-full border border-[#2B1610]/20 bg-white px-3 py-2.5 text-sm text-[#2B1610] focus:outline-none focus:border-[#B8792F]"
+                placeholder="Referring Sant's name"
+              />
+            </Field>
+          )}
+          {rules.santReferenceMobile !== 'hidden' && (
+            <Field label={`Sant reference — number ${rules.santReferenceMobile === 'required' ? '*' : '(optional)'}`}>
+              <input
+                value={form.santReferenceMobile}
+                onChange={(e) => update({ santReferenceMobile: e.target.value })}
+                className="w-full border border-[#2B1610]/20 bg-white px-3 py-2.5 text-sm text-[#2B1610] focus:outline-none focus:border-[#B8792F]"
+                placeholder="Referring Sant's mobile"
+              />
+            </Field>
+          )}
+        </div>
+      )}
 
       {/* Room type */}
       <div>

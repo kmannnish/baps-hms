@@ -120,7 +120,24 @@ INSERT INTO settings (key, value) VALUES
     ('backup_monthly_enabled',  'false'),
     ('backup_time',             '"02:00"'),
     ('backup_weekly_day',       '0'),
-    ('backup_monthly_day',      '1');
+    ('backup_monthly_day',      '1'),
+    ('booking_form_config',     '{
+        "walkin": {
+            "guestCity": "optional",
+            "santReferenceName": "required",
+            "santReferenceMobile": "optional",
+            "preferredArrivalTime": "optional",
+            "preferredDepartureTime": "optional",
+            "idDocument": "optional"
+        },
+        "online": {
+            "guestCity": "optional",
+            "santReferenceName": "required",
+            "santReferenceMobile": "optional",
+            "preferredArrivalTime": "optional",
+            "preferredDepartureTime": "optional"
+        }
+    }');
 
 -- ----------------------------------------------------------------------------
 -- 5. FLOORS & ROOMS
@@ -141,6 +158,7 @@ CREATE TABLE room_types (
     -- head-count capacity (e.g. 25 or 50). Ordinary sleeping rooms leave these
     -- at their defaults (is_hall=false, shown to customers, pax_capacity=0).
     is_hall                 BOOLEAN NOT NULL DEFAULT false,
+    is_shared               BOOLEAN NOT NULL DEFAULT false,
     show_on_customer_portal BOOLEAN NOT NULL DEFAULT true,
     pax_capacity            INT     NOT NULL DEFAULT 0
 );
@@ -173,6 +191,7 @@ CREATE TABLE bookings (
     num_rooms           INT NOT NULL DEFAULT 1 CHECK (num_rooms >= 1),
     guest_name          VARCHAR(128) NOT NULL,
     mobile              VARCHAR(20) NOT NULL,
+    guest_city          VARCHAR(128),
     pax_men             INT NOT NULL DEFAULT 0,
     pax_women           INT NOT NULL DEFAULT 0,
     pax_children        INT NOT NULL DEFAULT 0,
@@ -275,9 +294,9 @@ CREATE INDEX idx_payments_booking ON payments (booking_id);
 CREATE TABLE booking_rooms (
     booking_id  UUID NOT NULL REFERENCES bookings(id) ON DELETE CASCADE,
     room_id     UUID NOT NULL REFERENCES rooms(id)    ON DELETE CASCADE,
+    beds_used   INT NOT NULL DEFAULT 1,
     assigned_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    PRIMARY KEY (booking_id, room_id),
-    UNIQUE (room_id)
+    PRIMARY KEY (booking_id, room_id)
 );
 CREATE INDEX idx_booking_rooms_booking ON booking_rooms (booking_id);
 
@@ -343,4 +362,16 @@ CREATE TABLE notification_sounds (
     label      VARCHAR(100) NOT NULL,
     filename   VARCHAR(255) NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- ----------------------------------------------------------------------------
+-- 11. ADDON CHARGES — Admin-defined custom charges (Food, Extra Bed, etc.)
+-- ----------------------------------------------------------------------------
+CREATE TABLE addon_charges (
+    id          UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    name        VARCHAR(100) NOT NULL,
+    price       NUMERIC(10,2) NOT NULL DEFAULT 0,
+    is_active   BOOLEAN NOT NULL DEFAULT true,
+    sort_order  INT NOT NULL DEFAULT 0,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );

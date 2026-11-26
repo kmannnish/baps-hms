@@ -3,7 +3,7 @@ import { LogOut, X, DoorOpen, ClipboardList, LogIn as CheckInIcon, IndianRupee, 
 import { useAuth } from '../context/AuthContext';
 import FloorBoard from '../components/FloorBoard';
 import DashboardStatsStrip from '../components/DashboardStatsStrip';
-import WalkInBookingPanel from '../components/WalkInBookingPanel';
+import WalkInBookingPanel, { NewWalkInModal } from '../components/WalkInBookingPanel';
 import CurrentGuestsList from '../components/CurrentGuestsList';
 import BhojanPanel from '../components/BhojanPanel';
 import OccupancyCalendar from '../components/OccupancyCalendar';
@@ -37,6 +37,7 @@ export default function ReceptionPortal() {
   const [pendingApproval, setPendingApproval] = useState([]);
   const [upcomingBookings, setUpcomingBookings] = useState([]);
   const [selectedRoom, setSelectedRoom] = useState(null);
+  const [quickCheckinRoom, setQuickCheckinRoom] = useState(null);
   const [checkinBooking, setCheckinBooking] = useState(null);
   const [editingBooking, setEditingBooking] = useState(null);
   const [viewingBookingId, setViewingBookingId] = useState(null);
@@ -604,7 +605,18 @@ export default function ReceptionPortal() {
 
           {tab === 'walkins' && (
             <div>
-              <WalkInBookingPanel apiBaseUrl={apiBaseUrl} token={token} roomTypes={roomTypes} socket={socket} />
+              <WalkInBookingPanel
+                apiBaseUrl={apiBaseUrl}
+                token={token}
+                roomTypes={roomTypes}
+                socket={socket}
+                onBookingCreated={() => {
+                  loadBoard();
+                  loadAwaitingCheckin();
+                  loadUpcoming();
+                  loadDashStats();
+                }}
+              />
             </div>
           )}
 
@@ -644,6 +656,7 @@ export default function ReceptionPortal() {
           room={selectedRoom}
           onClose={() => setSelectedRoom(null)}
           onViewId={(id) => { setSelectedRoom(null); setViewingBookingId(id); }}
+          onQuickCheckin={(room) => { setSelectedRoom(null); setQuickCheckinRoom(room); }}
           onSetStatus={setRoomStatus}
           onCheckout={checkoutRoom}
           onRecordPayment={recordPayment}
@@ -654,6 +667,32 @@ export default function ReceptionPortal() {
           chargeRates={chargeRates}
           apiBaseUrl={apiBaseUrl}
           token={token}
+        />
+      )}
+
+      {quickCheckinRoom && (
+        <NewWalkInModal
+          roomTypes={roomTypes}
+          apiBaseUrl={apiBaseUrl}
+          token={token}
+          initialRoom={quickCheckinRoom}
+          onCancel={() => setQuickCheckinRoom(null)}
+          onCreate={async (payload) => {
+            const res = await fetch(`${apiBaseUrl}/bookings/walkin`, {
+              method: 'POST',
+              headers: authHeaders,
+              body: JSON.stringify(payload),
+            });
+            if (!res.ok) {
+              const body = await res.json().catch(() => ({}));
+              throw new Error(body.message || 'Could not check in guest. Please check the fields and try again.');
+            }
+            setQuickCheckinRoom(null);
+            loadBoard();
+            loadAwaitingCheckin();
+            loadUpcoming();
+            loadDashStats();
+          }}
         />
       )}
 
@@ -801,10 +840,16 @@ function TabButton({ active, onClick, icon: Icon, children }) {
 // rooms get simple status-toggle actions; occupied rooms get the
 // guest's billing summary plus checkout + payment editing.
 // ---------------------------------------------------------------------------
-function RoomActionModal({ room, onClose, onViewId, onSetStatus, onCheckout, onRecordPayment, onEditBilling, onCheckoutCharges, onExtendStay, onIssueLuggage, chargeRates, apiBaseUrl, token }) {
+function RoomActionModal({ room, onClose, onViewId, onQuickCheckin, onSetStatus, onCheckout, onRecordPayment, onEditBilling, onCheckoutCharges, onExtendStay, onIssueLuggage, chargeRates, apiBaseUrl, token }) {
+  const activeGuests = Array.isArray(room.activeGuests) && room.activeGuests.length > 0
+    ? room.activeGuests
+    : (room.bookingId ? [room] : []);
+  const [activeGuestIdx, setActiveGuestIdx] = useState(0);
+  const currentGuest = activeGuests[activeGuestIdx] || room;
+
   const [editingBilling, setEditingBilling] = useState(false);
-  const [billingTier, setBillingTier] = useState(room.billingTier || 'paid');
-  const [discountPercent, setDiscountPercent] = useState(Number(room.discountPercent) || 0);
+  const [billingTier, setBillingTier] = useState(currentGuest.billingTier || 'paid');
+  const [discountPercent, setDiscountPercent] = useState(Number(currentGuest.discountPercent) || 0);
   const [payAmount, setPayAmount] = useState('');
   const [payMethod, setPayMethod] = useState('cash');
   const [payNote, setPayNote] = useState('');
@@ -835,21 +880,26 @@ function RoomActionModal({ room, onClose, onViewId, onSetStatus, onCheckout, onR
   const [freeform, setFreeform] = useState([]); // [{ label, amount }]
   const [chargeBase, setChargeBase] = useState(null); // pre-surcharge amount
   const [applyingCharges, setApplyingCharges] = useState(false);
+  const [addonsList, setAddonsList] = useState([]);
+
+  useEffect(() => {
+    fetchArray(`${apiBaseUrl}/inventory/addons`).then(setAddonsList);
+  }, [apiBaseUrl]);
 
   const lateRate = Number(chargeRates?.lateCheckoutRatePerHour) || 0;
   const bedRate = Number(chargeRates?.extraBedRate) || 0;
 
-  const finalAmt = Number(room.finalAmount ?? 0);
-  const amtPaid = Number(room.amountPaid ?? 0);
+  const finalAmt = Number(currentGuest.finalAmount ?? 0);
+  const amtPaid = Number(currentGuest.amountPaid ?? 0);
   const balance = Math.max(0, finalAmt - amtPaid);
-  const pStatus = room.paymentStatus || (room.isPaid ? 'paid' : 'unpaid');
+  const pStatus = currentGuest.paymentStatus || (currentGuest.isPaid ? 'paid' : 'unpaid');
 
   const authH = { Authorization: `Bearer ${token}` };
 
   const loadPayHistory = async () => {
     if (showPayHistory) { setShowPayHistory(false); return; }
     try {
-      const res = await fetch(`${apiBaseUrl}/bookings/${room.bookingId}/payments`, { headers: authH });
+      const res = await fetch(`${apiBaseUrl}/bookings/${currentGuest.bookingId}/payments`, { headers: authH });
       const data = await res.json();
       setPayHistory(Array.isArray(data) ? data : []);
     } catch { setPayHistory([]); }
@@ -860,17 +910,17 @@ function RoomActionModal({ room, onClose, onViewId, onSetStatus, onCheckout, onR
     // The PDF endpoint only needs the booking id; fetch the booking first so the
     // downloaded file can be named with its booking_code, but fall back cleanly.
     try {
-      const bRes = await fetch(`${apiBaseUrl}/bookings/${room.bookingId}`, { headers: authH });
+      const bRes = await fetch(`${apiBaseUrl}/bookings/${currentGuest.bookingId}`, { headers: authH });
       const booking = await bRes.json();
-      await printReceipt(booking?.id ? booking : { id: room.bookingId }, { apiBaseUrl, token });
+      await printReceipt(booking?.id ? booking : { id: currentGuest.bookingId }, { apiBaseUrl, token });
     } catch {
-      printReceipt({ id: room.bookingId }, { apiBaseUrl, token });
+      printReceipt({ id: currentGuest.bookingId }, { apiBaseUrl, token });
     }
   };
 
   const handleWhatsApp = async () => {
     try {
-      const res = await fetch(`${apiBaseUrl}/bookings/${room.bookingId}`, { headers: authH });
+      const res = await fetch(`${apiBaseUrl}/bookings/${currentGuest.bookingId}`, { headers: authH });
       const booking = await res.json();
       openWhatsAppReceipt(booking);
     } catch { /* ignore */ }
@@ -880,7 +930,7 @@ function RoomActionModal({ room, onClose, onViewId, onSetStatus, onCheckout, onR
     const amt = Number(payAmount);
     if (!amt || amt <= 0) return;
     setPaying(true);
-    await onRecordPayment(room.bookingId, amt, payMethod, payNote);
+    await onRecordPayment(currentGuest.bookingId, amt, payMethod, payNote);
     setPaying(false);
     setPayAmount(''); setPayNote('');
   };
@@ -901,7 +951,7 @@ function RoomActionModal({ room, onClose, onViewId, onSetStatus, onCheckout, onR
     let priorExtra = [];
     let base = finalAmt;
     try {
-      const res = await fetch(`${apiBaseUrl}/bookings/${room.bookingId}`, { headers: authH });
+      const res = await fetch(`${apiBaseUrl}/bookings/${currentGuest.bookingId}`, { headers: authH });
       const b = await res.json();
       if (b && !b.error) {
         priorLate = Number(b.late_checkout_surcharge) || 0;
@@ -933,7 +983,7 @@ function RoomActionModal({ room, onClose, onViewId, onSetStatus, onCheckout, onR
 
   const applyCharges = async () => {
     setApplyingCharges(true);
-    await onCheckoutCharges?.(room.bookingId, {
+    await onCheckoutCharges?.(currentGuest.bookingId, {
       lateCheckoutHours: Math.max(0, Number(lateHours) || 0),
       extraBeds: Math.max(0, Math.floor(Number(extraBeds) || 0)),
       extraCharges: freeform
@@ -948,7 +998,7 @@ function RoomActionModal({ room, onClose, onViewId, onSetStatus, onCheckout, onR
     const n = Math.max(1, Math.floor(Number(extendNights) || 1));
     setExtending(true);
     setExtendMsg(null);
-    const result = await onExtendStay?.(room.bookingId, n);
+    const result = await onExtendStay?.(currentGuest.bookingId, n);
     setExtending(false);
     if (result?.ok) {
       setExtendMsg({
@@ -965,8 +1015,8 @@ function RoomActionModal({ room, onClose, onViewId, onSetStatus, onCheckout, onR
     setIssuingLuggage(true);
     setLuggageMsg(null);
     const result = await onIssueLuggage?.({
-      guestName: room.guestName,
-      bookingId: room.bookingId,
+      guestName: currentGuest.guestName,
+      bookingId: currentGuest.bookingId,
       bagCount: bags,
     });
     setIssuingLuggage(false);
@@ -982,7 +1032,7 @@ function RoomActionModal({ room, onClose, onViewId, onSetStatus, onCheckout, onR
   const doCheckout = async (force) => {
     setCheckingOut(true);
     setCheckoutErr(null);
-    const result = await onCheckout?.(room.bookingId, force);
+    const result = await onCheckout?.(currentGuest.bookingId, force);
     setCheckingOut(false);
     if (result?.ok) return; // parent closes the modal + refreshes
     if (result?.unpaid) { setCheckoutConfirm({ balance: result.balance }); return; }
@@ -995,29 +1045,73 @@ function RoomActionModal({ room, onClose, onViewId, onSetStatus, onCheckout, onR
     ? 'bg-[#B8792F]/10 text-[#B8792F]'
     : 'bg-[#8C3B3B]/10 text-[#8C3B3B]';
 
-  if (room.status === 'occupied' && room.bookingId) {
+  if (activeGuests.length > 0 && currentGuest.bookingId) {
+    const hasFreeCapacity = room.isShared && (room.occupiedCount || 0) < (room.bedCount || 1);
     return (
       <div className="fixed inset-0 bg-[#2B1610]/60 flex items-center justify-center p-4 z-50">
         <div className="bg-[#F8F4EC] max-w-sm w-full p-6 relative max-h-[90vh] overflow-y-auto">
           <button onClick={onClose} className="absolute top-4 right-4 text-[#2B1610]/40 hover:text-[#2B1610]">
             <X className="w-5 h-5" />
           </button>
-          <h3 className="font-serif text-lg text-[#2B1610] mb-1">Room {room.roomNumber}</h3>
+          <h3 className="font-serif text-lg text-[#2B1610] mb-1">
+            Room {room.roomNumber}
+            {room.isShared && (
+              <span className="ml-2 text-xs font-sans text-[#2B1610]/50">
+                ({room.occupiedCount}/{room.bedCount} {room.isHall ? 'pax' : 'beds'})
+              </span>
+            )}
+          </h3>
+
+          {hasFreeCapacity && onQuickCheckin && (
+            <button
+              onClick={() => onQuickCheckin(room)}
+              className="w-full flex items-center justify-center gap-2 bg-[#4A6D5C] text-white px-3 py-2 text-xs hover:opacity-90 my-2"
+            >
+              <CheckInIcon className="w-3.5 h-3.5" /> Check in another guest ({(room.bedCount || 1) - (room.occupiedCount || 0)} free)
+            </button>
+          )}
+
+          {activeGuests.length > 1 && (
+            <div className="flex flex-wrap gap-1.5 my-2">
+              {activeGuests.map((g, idx) => (
+                <button
+                  key={g.bookingId}
+                  type="button"
+                  onClick={() => {
+                    setActiveGuestIdx(idx);
+                    setBillingTier(g.billingTier || 'paid');
+                    setDiscountPercent(Number(g.discountPercent) || 0);
+                    setShowPayHistory(false);
+                    setShowCharges(false);
+                    setCheckoutConfirm(null);
+                  }}
+                  className={`px-2 py-1 text-xs border ${
+                    idx === activeGuestIdx
+                      ? 'bg-[#2B1610] text-[#F8F4EC] border-[#2B1610]'
+                      : 'bg-white border-[#2B1610]/20 text-[#2B1610]/70'
+                  }`}
+                >
+                  {g.guestName} ({g.bedsUsed || 1})
+                </button>
+              ))}
+            </div>
+          )}
+
           <div className="flex items-center gap-2 mb-1">
-            <p className="text-sm text-[#2B1610]/70">{room.guestName}</p>
-            {!room.idDocumentUrl && (
+            <p className="text-sm text-[#2B1610]/70">{currentGuest.guestName}</p>
+            {!currentGuest.idDocumentUrl && (
               <span className="text-[10px] uppercase tracking-wide bg-[#C77A34]/15 text-[#C77A34] px-1.5 py-0.5">No ID</span>
             )}
           </div>
           <p className="text-xs text-[#2B1610]/40 mb-4">
-            Checkout by {fmtDate(room.checkoutTime)}
+            Checkout by {fmtDate(currentGuest.checkoutTime)}
           </p>
 
           {/* Billing summary */}
           <div className="border border-[#2B1610]/10 p-3 mb-4">
             <div className="flex items-center justify-between text-sm mb-2">
               <span className="text-[#2B1610]/60">Billing tier</span>
-              <span className="text-[#2B1610]">{room.billingTier || '—'}</span>
+              <span className="text-[#2B1610]">{currentGuest.billingTier || '—'}</span>
             </div>
             <div className="flex items-center justify-between text-sm mb-2">
               <span className="text-[#2B1610]/60">Total</span>
@@ -1043,7 +1137,7 @@ function RoomActionModal({ room, onClose, onViewId, onSetStatus, onCheckout, onR
           </div>
 
           <button
-            onClick={() => onViewId?.(room.bookingId)}
+            onClick={() => onViewId?.(currentGuest.bookingId)}
             className="w-full flex items-center justify-center gap-1.5 border border-[#2B1610]/20 text-[#2B1610] py-2.5 text-sm hover:bg-[#2B1610]/5 mb-2"
           >
             <Eye className="w-3.5 h-3.5" /> View ID
@@ -1137,7 +1231,7 @@ function RoomActionModal({ room, onClose, onViewId, onSetStatus, onCheckout, onR
                 />
               )}
               <button
-                onClick={() => { onEditBilling(room.bookingId, billingTier, discountPercent); setEditingBilling(false); }}
+                onClick={() => { onEditBilling(currentGuest.bookingId, billingTier, discountPercent); setEditingBilling(false); }}
                 className="w-full bg-[#2B1610] text-[#F8F4EC] py-2 text-sm"
               >
                 Save billing changes
@@ -1187,6 +1281,23 @@ function RoomActionModal({ room, onClose, onViewId, onSetStatus, onCheckout, onR
               </div>
 
               <div className="space-y-2">
+                {addonsList.length > 0 && (
+                  <div>
+                    <span className="text-xs text-[#2B1610]/60 block mb-1.5">Quick add-ons (click to add)</span>
+                    <div className="flex flex-wrap gap-1.5 mb-2">
+                      {addonsList.map((a) => (
+                        <button
+                          key={a.id}
+                          type="button"
+                          onClick={() => setFreeform((f) => [...f, { label: a.name, amount: Number(a.price) || 0 }])}
+                          className="text-xs border border-[#B8792F]/40 bg-white px-2 py-1 text-[#2B1610] hover:bg-[#B8792F]/10"
+                        >
+                          + {a.name} (₹{Number(a.price).toLocaleString('en-IN')})
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
                 <div className="flex items-center justify-between">
                   <span className="text-xs text-[#2B1610]/60">Other charges</span>
                   <button
@@ -1374,6 +1485,14 @@ function RoomActionModal({ room, onClose, onViewId, onSetStatus, onCheckout, onR
         <h3 className="font-serif text-lg text-[#2B1610] mb-1">Room {room.roomNumber}</h3>
         <p className="text-xs text-[#2B1610]/50 mb-5">{room.roomType}</p>
         <div className="space-y-2">
+          {(room.status === 'ready' || room.status === 'in_transit') && onQuickCheckin && (
+            <button
+              onClick={() => onQuickCheckin(room)}
+              className="w-full flex items-center justify-center gap-2 bg-[#4A6D5C] text-white px-3 py-2.5 text-sm hover:opacity-90 mb-2"
+            >
+              <CheckInIcon className="w-4 h-4" /> Check in guest to Room {room.roomNumber}
+            </button>
+          )}
           {options.map((opt) => (
             <button
               key={opt.status}

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Save, Loader2, MessageCircleMore, FileText, Percent, Clock, Music, Play, Upload, Building2, Mail, Send, Image as ImageIcon, Soup, ShieldCheck } from 'lucide-react';
+import { Save, Loader2, MessageCircleMore, FileText, Percent, Clock, Music, Play, Upload, Building2, Mail, Send, Image as ImageIcon, Soup, ShieldCheck, ClipboardCheck } from 'lucide-react';
 import { fetchObject, fetchArray } from '../lib/api';
 
 /**
@@ -52,6 +52,25 @@ export default function ContentSettings({ apiBaseUrl, token }) {
   // behalf (recording his phone/WhatsApp decision) with a mandatory note.
   const [receptionApproveOnBehalf, setReceptionApproveOnBehalf] = useState(false);
 
+  const DEFAULT_FORM_CONFIG = {
+    walkin: {
+      guestCity: 'optional',
+      santReferenceName: 'required',
+      santReferenceMobile: 'optional',
+      preferredArrivalTime: 'optional',
+      preferredDepartureTime: 'optional',
+      idDocument: 'optional',
+    },
+    online: {
+      guestCity: 'optional',
+      santReferenceName: 'required',
+      santReferenceMobile: 'optional',
+      preferredArrivalTime: 'optional',
+      preferredDepartureTime: 'optional',
+    },
+  };
+  const [formConfig, setFormConfig] = useState(DEFAULT_FORM_CONFIG);
+
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -95,6 +114,12 @@ export default function ContentSettings({ apiBaseUrl, token }) {
         report_time: s.bhojan_report_time ?? '06:30',
       });
       setReceptionApproveOnBehalf(s.reception_approve_on_behalf === true);
+      if (s.booking_form_config && typeof s.booking_form_config === 'object') {
+        setFormConfig({
+          walkin: { ...DEFAULT_FORM_CONFIG.walkin, ...(s.booking_form_config.walkin || {}) },
+          online: { ...DEFAULT_FORM_CONFIG.online, ...(s.booking_form_config.online || {}) },
+        });
+      }
       setSounds(snds);
       setLoading(false);
     });
@@ -133,6 +158,7 @@ export default function ContentSettings({ apiBaseUrl, token }) {
           bhojan_report_enabled: bhojan.report_enabled,
           bhojan_report_time: bhojan.report_time,
           reception_approve_on_behalf: receptionApproveOnBehalf,
+          booking_form_config: formConfig,
         }),
       });
       setSaved(true);
@@ -576,6 +602,56 @@ export default function ContentSettings({ apiBaseUrl, token }) {
           />
           <span className="text-sm text-[#2B1610]/80">Let Reception approve bookings on behalf of Swami Ji</span>
         </label>
+      </div>
+
+      {/* Booking form field rules */}
+      <div>
+        <h3 className="font-serif text-lg text-[#2B1610] mb-1 flex items-center gap-2">
+          <ClipboardCheck className="w-4 h-4 text-[#B8792F]" /> Booking form fields
+        </h3>
+        <p className="text-xs text-[#2B1610]/50 mb-3">
+          Control which fields are compulsory, optional, or hidden on the Reception walk-in form and the public guest form.
+        </p>
+        <div className="grid sm:grid-cols-2 gap-4">
+          {[
+            { channel: 'walkin', title: 'Reception desk (Walk-in)', fields: [
+              ['guestCity', 'City / Address'],
+              ['santReferenceName', 'Sant reference — name'],
+              ['santReferenceMobile', 'Sant reference — number'],
+              ['preferredArrivalTime', 'Expected arrival time'],
+              ['preferredDepartureTime', 'Expected departure time'],
+              ['idDocument', 'Government ID upload'],
+            ] },
+            { channel: 'online', title: 'Public guest portal (Online)', fields: [
+              ['guestCity', 'City / Address'],
+              ['santReferenceName', 'Sant reference — name'],
+              ['santReferenceMobile', 'Sant reference — number'],
+              ['preferredArrivalTime', 'Expected arrival time'],
+              ['preferredDepartureTime', 'Expected departure time'],
+            ] },
+          ].map((group) => (
+            <div key={group.channel} className="border border-[#2B1610]/10 p-3 space-y-2 bg-white/40">
+              <p className="text-xs font-medium uppercase tracking-wide text-[#2B1610]/70 mb-2">{group.title}</p>
+              {group.fields.map(([key, label]) => (
+                <div key={key} className="flex items-center justify-between gap-2 text-xs">
+                  <span className="text-[#2B1610]/80">{label}</span>
+                  <select
+                    value={formConfig[group.channel]?.[key] || 'optional'}
+                    onChange={(e) => setFormConfig((prev) => ({
+                      ...prev,
+                      [group.channel]: { ...prev[group.channel], [key]: e.target.value },
+                    }))}
+                    className="border border-[#2B1610]/20 bg-white px-2 py-1 text-xs"
+                  >
+                    <option value="required">Required</option>
+                    <option value="optional">Optional</option>
+                    <option value="hidden">Hidden</option>
+                  </select>
+                </div>
+              ))}
+            </div>
+          ))}
+        </div>
       </div>
 
       <div>

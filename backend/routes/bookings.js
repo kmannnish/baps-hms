@@ -72,16 +72,172 @@ module.exports = function (io) {
     res.json(calendar);
   }));
 
+  const DEFAULT_FORM_CONFIG = {
+    walkin: {
+      guestCity: 'optional',
+      santReferenceName: 'required',
+      santReferenceMobile: 'optional',
+      preferredArrivalTime: 'optional',
+      preferredDepartureTime: 'optional',
+      idDocument: 'optional',
+    },
+    online: {
+      guestCity: 'optional',
+      santReferenceName: 'required',
+      santReferenceMobile: 'optional',
+      preferredArrivalTime: 'optional',
+      preferredDepartureTime: 'optional',
+    },
+  };
+
+  async function getFormConfig(channel) {
+    try {
+      const { rows } = await pool.query(`SELECT value FROM settings WHERE key = 'booking_form_config'`);
+      const cfg = rows[0]?.value?.[channel] || {};
+      return { ...(DEFAULT_FORM_CONFIG[channel] || {}), ...cfg };
+    } catch {
+      return DEFAULT_FORM_CONFIG[channel] || {};
+    }
+  }
+
+  function validateDynamicFields(cfg, body) {
+    const checks = [
+      ['guestCity', 'City / Address'],
+      ['santReferenceName', 'Sant reference name'],
+      ['santReferenceMobile', 'Sant reference number'],
+      ['preferredArrivalTime', 'Expected arrival time'],
+      ['preferredDepartureTime', 'Expected departure time'],
+      ['idDocument', 'Government ID', 'idDocumentUrl'],
+    ];
+    for (const [cfgKey, label, bodyKey] of checks) {
+      if (cfg[cfgKey] === 'required') {
+        const val = body[bodyKey || cfgKey];
+        if (!val || !String(val).trim()) {
+          return `${label} is required.`;
+        }
+      }
+    }
+    return null;
+  }
+
+  /**
+   * Recalculates a room's status ('ready' vs 'occupied') based on active
+   * checked-in bookings in `booking_rooms` and `room_types.is_shared`.
+   */
+  async function syncRoomStatus(db, roomId) {
+    const { rows } = await db.query(
+      `SELECT r.id, r.status, r.bed_count, rt.is_shared,
+              COALESCE(SUM(CASE WHEN b.status = 'checked_in' THEN br.beds_used ELSE 0 END), 0)::int AS used
+       FROM rooms r
+       JOIN room_types rt ON rt.id = r.room_type_id
+       LEFT JOIN booking_rooms br ON br.room_id = r.id
+       LEFT JOIN bookings b ON b.id = br.booking_id
+       WHERE r.id = $1
+       GROUP BY r.id, rt.is_shared`,
+      [roomId]
+    );
+    const info = rows[0];
+    if (!info || info.status === 'maintenance') return info?.status || 'ready';
+    const nextStatus = info.is_shared
+      ? (info.used >= info.bed_count ? 'occupied' : 'ready')
+      : (info.used > 0 ? 'occupied' : 'ready');
+    if (info.status !== nextStatus) {
+      await db.query(`UPDATE rooms SET status = $1 WHERE id = $2`, [nextStatus, roomId]);
+    }
+    return nextStatus;
+  }
+
+  /**
+   * Validates capacity and inserts `booking_rooms` rows for check-in,
+   * supporting both private rooms and shared dormitories / shared halls.
+   */
+  async function allocateRoomsForCheckin(client, { bookingId, roomIds, isShared, totalBedsNeeded }) {
+    const { rows: roomRows } = await client.query(
+      `SELECT r.id, r.room_number, r.status, r.bed_count
+       FROM rooms r WHERE r.id = ANY($1::uuid[]) FOR UPDATE`,
+      [roomIds]
+    );
+    if (roomRows.length !== roomIds.length) {
+      return { error: { status: 404, code: 'ROOM_NOT_FOUND', message: 'One or more rooms not found.' } };
+    }
+    if (roomRows.some((r) => r.status === 'maintenance')) {
+      return { error: { status: 409, code: 'ROOM_UNDER_MAINTENANCE', message: 'Selected room is under maintenance.' } };
+    }
+    if (!isShared && roomRows.some((r) => r.status !== 'ready')) {
+      return { error: { status: 409, code: 'ROOM_NOT_READY', message: 'One or more selected rooms are no longer ready.' } };
+    }
+
+    const perRoomBeds = isShared ? Math.max(1, Math.ceil(totalBedsNeeded / roomIds.length)) : 1;
+    const updatedStatuses = [];
+
+    for (const r of roomRows) {
+      if (isShared) {
+        const { rows: usedRows } = await client.query(
+          `SELECT COALESCE(SUM(br.beds_used), 0)::int AS used
+           FROM booking_rooms br
+           JOIN bookings b ON b.id = br.booking_id
+           WHERE br.room_id = $1 AND b.status = 'checked_in'`,
+          [r.id]
+        );
+        const used = usedRows[0]?.used ?? 0;
+        const free = Math.max(0, r.bed_count - used);
+        if (free < perRoomBeds) {
+          return {
+            error: {
+              status: 409,
+              code: 'ROOM_CAPACITY_EXCEEDED',
+              message: `Room ${r.room_number} only has ${free} bed(s)/seat(s) free (requested ${perRoomBeds}).`,
+            },
+          };
+        }
+      }
+      await client.query(
+        `INSERT INTO booking_rooms (booking_id, room_id, beds_used)
+         VALUES ($1, $2, $3)
+         ON CONFLICT (booking_id, room_id) DO UPDATE SET beds_used = EXCLUDED.beds_used`,
+        [bookingId, r.id, perRoomBeds]
+      );
+      const nextStatus = await syncRoomStatus(client, r.id);
+      updatedStatuses.push({ roomId: r.id, status: nextStatus });
+    }
+    return { updatedStatuses };
+  }
+
+  // GET /bookings/sant-references?q= — autocomplete previously used Sant names & numbers
+  router.get('/sant-references', requireAuth, asyncHandler(async (req, res) => {
+    const q = String(req.query.q || '').trim();
+    const { rows } = await pool.query(
+      `SELECT sant_reference_name AS name,
+              MAX(sant_reference_mobile) AS mobile,
+              COUNT(*)::int AS usage_count
+       FROM bookings
+       WHERE sant_reference_name IS NOT NULL
+         AND TRIM(sant_reference_name) <> ''
+         AND ($1 = '' OR sant_reference_name ILIKE $1 || '%')
+       GROUP BY sant_reference_name
+       ORDER BY usage_count DESC, sant_reference_name ASC
+       LIMIT 12`,
+      [q]
+    );
+    res.json(rows);
+  }));
+
   // POST /bookings
   router.post('/', asyncHandler(async (req, res) => {
     const {
-      guestName, mobile, checkinDate, checkoutDate, santReferenceName, santReferenceMobile,
+      guestName, mobile, guestCity, checkinDate, checkoutDate, santReferenceName, santReferenceMobile,
       roomTypeId, idDocumentUrl, preferredArrivalTime, preferredDepartureTime,
     } = req.body;
     const paxMen = Number(req.body.paxMen ?? 0);
     const paxWomen = Number(req.body.paxWomen ?? 0);
     const paxChildren = Number(req.body.paxChildren ?? 0);
     const numRooms = Math.max(1, Number(req.body.numRooms ?? 1));
+
+    const formCfg = await getFormConfig('online');
+    const dynErr = validateDynamicFields(formCfg, req.body);
+    if (dynErr) {
+      return res.status(400).json({ error: 'MISSING_REQUIRED_FIELDS', message: dynErr });
+    }
 
     const { rows: capRows } = await pool.query(
       `SELECT capacity_cap FROM room_types WHERE id = $1`, [roomTypeId]
@@ -102,14 +258,15 @@ module.exports = function (io) {
     const bookingCode = await makeBookingCode(pool);
     const { rows } = await pool.query(
       `INSERT INTO bookings
-        (booking_code, channel, num_rooms, guest_name, mobile, pax_men, pax_women, pax_children, checkin_date, checkout_date,
+        (booking_code, channel, num_rooms, guest_name, mobile, guest_city, pax_men, pax_women, pax_children, checkin_date, checkout_date,
          sant_reference_name, sant_reference_mobile, room_type_id, id_document_url, status,
          preferred_arrival_time, preferred_departure_time)
-       VALUES ($15,'online',$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,'pending',$13,$14)
+       VALUES ($15,'online',$1,$2,$3,$16,$4,$5,$6,$7,$8,$9,$10,$11,$12,'pending',$13,$14)
        RETURNING *`,
       [numRooms, guestName, mobile, paxMen, paxWomen, paxChildren, checkinDate, checkoutDate,
        santReferenceName, santReferenceMobile, roomTypeId, idDocumentUrl,
-       preferredArrivalTime || null, preferredDepartureTime || null, bookingCode]
+       preferredArrivalTime || null, preferredDepartureTime || null, bookingCode,
+       guestCity ? String(guestCity).trim() : null]
     );
 
     const booking = rows[0];
@@ -118,39 +275,201 @@ module.exports = function (io) {
   }));
 
   // POST /bookings/walkin
+  // Supports both classic pending walk-in creation AND 1-step instant
+  // approve + room-assign + check-in (`checkinNow: true` + `roomIds`), as
+  // well as `autoApprove: true` for future-date bookings.
   router.post('/walkin', requireAuth, requirePermission('can_create_bookings'), asyncHandler(async (req, res) => {
     const {
-      guestName, mobile, checkinDate, checkoutDate, santReferenceName, santReferenceMobile,
+      guestName, mobile, guestCity, checkinDate, checkoutDate, santReferenceName, santReferenceMobile,
       roomTypeId, idDocumentUrl, preferredArrivalTime, preferredDepartureTime,
+      checkinNow = false, autoApprove = false,
+      billingTier = 'paid', discountPercent = 0, approvalNote = '',
+      payment = null,
+      extraCharges: rawExtraCharges = [],
     } = req.body;
     const paxMen = Number(req.body.paxMen ?? 0);
     const paxWomen = Number(req.body.paxWomen ?? 0);
     const paxChildren = Number(req.body.paxChildren ?? 0);
     const numRooms = Math.max(1, Number(req.body.numRooms ?? 1));
+    const roomIds = [...new Set(
+      Array.isArray(req.body.roomIds) && req.body.roomIds.length
+        ? req.body.roomIds
+        : (req.body.roomId ? [req.body.roomId] : [])
+    )];
 
     if (!guestName || !mobile || !checkinDate || !checkoutDate || !roomTypeId) {
       return res.status(400).json({ error: 'MISSING_REQUIRED_FIELDS' });
+    }
+    const walkinCfg = await getFormConfig('walkin');
+    const walkinDynErr = validateDynamicFields(walkinCfg, req.body);
+    if (walkinDynErr) {
+      return res.status(400).json({ error: 'MISSING_REQUIRED_FIELDS', message: walkinDynErr });
     }
     if (new Date(checkoutDate) <= new Date(checkinDate)) {
       return res.status(400).json({ error: 'CHECKOUT_BEFORE_CHECKIN' });
     }
 
-    const bookingCode = await makeBookingCode(pool);
-    const { rows } = await pool.query(
-      `INSERT INTO bookings
-        (booking_code, channel, num_rooms, guest_name, mobile, pax_men, pax_women, pax_children, checkin_date, checkout_date,
-         sant_reference_name, sant_reference_mobile, room_type_id, id_document_url, status, created_by,
-         preferred_arrival_time, preferred_departure_time)
-       VALUES ($14,'walkin',$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,'pending',$13,$15,$16)
-       RETURNING *`,
-      [numRooms, guestName, mobile, paxMen, paxWomen, paxChildren, checkinDate, checkoutDate,
-       santReferenceName ?? null, santReferenceMobile ?? null, roomTypeId, idDocumentUrl ?? null, req.user.id, bookingCode,
-       preferredArrivalTime || null, preferredDepartureTime || null]
-    );
+    const wantApprove = Boolean(checkinNow || autoApprove);
+    if (wantApprove && !(await userHasPermission(req.user.id, 'can_approve_bookings'))) {
+      return res.status(403).json({ error: 'FORBIDDEN', message: 'Missing permission to approve bookings.' });
+    }
+    if (checkinNow) {
+      if (!(await userHasPermission(req.user.id, 'can_checkin_checkout'))) {
+        return res.status(403).json({ error: 'FORBIDDEN', message: 'Missing permission to check in guests.' });
+      }
+      if (roomIds.length !== numRooms) {
+        return res.status(400).json({
+          error: 'ROOM_COUNT_MISMATCH',
+          message: `Select ${numRooms} room(s) for immediate check-in.`,
+        });
+      }
+    }
 
-    const booking = rows[0];
-    io.to('role:receptionist').emit('booking:new', booking);
-    res.status(201).json(booking);
+    const bookingCode = await makeBookingCode(pool);
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+
+      let finalAmount = null;
+      let status = 'pending';
+      let approvedBy = null;
+      let approvedAt = null;
+      let effectiveTier = null;
+      let effectiveDiscount = 0;
+
+      let isSharedType = false;
+      if (wantApprove) {
+        const { rows: roomTypeRows } = await client.query(
+          `SELECT base_price, is_shared FROM room_types WHERE id = $1`, [roomTypeId]
+        );
+        if (!roomTypeRows[0]) {
+          await client.query('ROLLBACK');
+          return res.status(404).json({ error: 'ROOM_TYPE_NOT_FOUND' });
+        }
+        isSharedType = !!roomTypeRows[0].is_shared;
+        const basePrice = Number(roomTypeRows[0].base_price ?? 0);
+        const nights = nightsBetween(checkinDate, checkoutDate);
+        const { gstPercent } = await getTaxSettings();
+        effectiveTier = billingTier || 'paid';
+        effectiveDiscount = Number(discountPercent) || 0;
+        finalAmount = calculateFinalAmount({
+          basePrice,
+          numRooms,
+          nights,
+          billingTier: effectiveTier,
+          discountPercent: effectiveDiscount,
+          gstPercent,
+        });
+      }
+
+      const sanitizedExtraCharges = Array.isArray(rawExtraCharges)
+        ? rawExtraCharges
+            .map((c) => ({ label: String(c?.label ?? '').trim(), amount: Number(c?.amount) || 0 }))
+            .filter((c) => c.label && c.amount > 0)
+        : [];
+      const extraChargesTotal = sanitizedExtraCharges.reduce((s, c) => s + c.amount, 0);
+      if (finalAmount !== null) {
+        finalAmount = Math.round((finalAmount + extraChargesTotal) * 100) / 100;
+      }
+
+      if (wantApprove) {
+        status = checkinNow ? 'checked_in' : 'approved';
+        approvedBy = req.user.id;
+        approvedAt = new Date();
+      }
+
+      if (checkinNow) {
+        const { rows: roomRows } = await client.query(
+          `SELECT id, status FROM rooms WHERE id = ANY($1::uuid[]) FOR UPDATE`, [roomIds]
+        );
+        if (roomRows.length !== roomIds.length) {
+          await client.query('ROLLBACK');
+          return res.status(404).json({ error: 'ROOM_NOT_FOUND' });
+        }
+        if (roomRows.some((r) => r.status !== 'ready')) {
+          await client.query('ROLLBACK');
+          return res.status(409).json({ error: 'ROOM_NOT_READY', message: 'One or more selected rooms are no longer ready.' });
+        }
+      }
+
+      const payAmt = checkinNow && payment && Number(payment.amount) > 0 ? Number(payment.amount) : 0;
+      const amtPaid = finalAmount !== null ? payAmt : 0;
+      let paymentStatus = 'unpaid';
+      let isPaid = false;
+      if (finalAmount !== null && finalAmount <= 0) {
+        paymentStatus = 'paid';
+        isPaid = true;
+      } else if (amtPaid > 0 && finalAmount !== null) {
+        paymentStatus = amtPaid >= finalAmount ? 'paid' : 'partial';
+        isPaid = amtPaid >= finalAmount;
+      }
+
+      const { rows } = await client.query(
+        `INSERT INTO bookings
+          (booking_code, channel, num_rooms, guest_name, mobile, guest_city, pax_men, pax_women, pax_children,
+           checkin_date, checkout_date, sant_reference_name, sant_reference_mobile, room_type_id, room_id,
+           id_document_url, status, billing_tier, discount_percent, final_amount, extra_charges, amount_paid, payment_status, is_paid,
+           ata_actual_arrival, created_by, approved_by, approved_at, approval_note,
+           preferred_arrival_time, preferred_departure_time)
+         VALUES ($1,'walkin',$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30)
+         RETURNING *`,
+        [
+          bookingCode, numRooms, guestName, mobile, guestCity ? String(guestCity).trim() : null,
+          paxMen, paxWomen, paxChildren, checkinDate, checkoutDate,
+          santReferenceName ?? null, santReferenceMobile ?? null, roomTypeId,
+          checkinNow ? roomIds[0] : null, idDocumentUrl ?? null, status,
+          effectiveTier, effectiveDiscount, finalAmount, JSON.stringify(sanitizedExtraCharges), amtPaid, paymentStatus, isPaid,
+          checkinNow ? new Date() : null, req.user.id, approvedBy, approvedAt,
+          approvalNote ? String(approvalNote).trim() : null,
+          preferredArrivalTime || null, preferredDepartureTime || null,
+        ]
+      );
+      const booking = rows[0];
+
+      let roomStatusUpdates = [];
+      if (checkinNow) {
+        const totalBeds = Math.max(1, paxMen + paxWomen + paxChildren);
+        const alloc = await allocateRoomsForCheckin(client, {
+          bookingId: booking.id,
+          roomIds,
+          isShared: isSharedType,
+          totalBedsNeeded: totalBeds,
+        });
+        if (alloc.error) {
+          await client.query('ROLLBACK');
+          return res.status(alloc.error.status).json({ error: alloc.error.code, message: alloc.error.message });
+        }
+        roomStatusUpdates = alloc.updatedStatuses;
+
+        if (payAmt > 0) {
+          const method = ['cash', 'upi', 'card'].includes(payment.method) ? payment.method : 'cash';
+          await client.query(
+            `INSERT INTO payments (booking_id, amount, method, note, recorded_by) VALUES ($1, $2, $3, $4, $5)`,
+            [booking.id, payAmt, method, payment.note || 'Collected at walk-in check-in', req.user.id]
+          );
+        }
+
+        await client.query(
+          `INSERT INTO audit_log (actor_id, action, entity_type, entity_id, metadata)
+           VALUES ($1, 'booking.walkin_checked_in', 'booking', $2, $3)`,
+          [req.user.id, booking.id, JSON.stringify({ roomIds, billingTier: effectiveTier })]
+        );
+      }
+
+      await client.query('COMMIT');
+
+      if (checkinNow) {
+        for (const u of roomStatusUpdates) io.emit('room:status_changed', u);
+        io.to('role:receptionist').emit('booking:updated', booking);
+      }
+      io.to('role:receptionist').emit('booking:new', booking);
+      res.status(201).json(booking);
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
   }));
 
   // GET /bookings/pending?channel=walkin|online
@@ -435,49 +754,64 @@ module.exports = function (io) {
     )];
     if (roomIds.length === 0) return res.status(400).json({ error: 'NO_ROOMS_SELECTED' });
 
-    const { rows: bookingRows } = await pool.query(
-      `SELECT num_rooms FROM bookings WHERE id = $1`, [id]
-    );
-    if (!bookingRows[0]) return res.status(404).json({ error: 'BOOKING_NOT_FOUND' });
-    const needed = bookingRows[0].num_rooms ?? 1;
-    if (roomIds.length !== needed) {
-      return res.status(400).json({
-        error: 'ROOM_COUNT_MISMATCH',
-        message: `This booking needs ${needed} room(s); ${roomIds.length} selected.`,
-      });
-    }
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
 
-    const { rows: roomRows } = await pool.query(
-      `SELECT id, status FROM rooms WHERE id = ANY($1::uuid[])`, [roomIds]
-    );
-    if (roomRows.length !== roomIds.length) return res.status(404).json({ error: 'ROOM_NOT_FOUND' });
-    if (roomRows.some((r) => r.status !== 'ready')) {
-      return res.status(409).json({ error: 'ROOM_NOT_READY' });
-    }
-
-    const { rows } = await pool.query(
-      `UPDATE bookings SET room_id = $1, status = 'checked_in', ata_actual_arrival = now(), updated_at = now()
-       WHERE id = $2 RETURNING *`,
-      [roomIds[0], id]
-    );
-    for (const rid of roomIds) {
-      await pool.query(
-        `INSERT INTO booking_rooms (booking_id, room_id) VALUES ($1, $2)
-         ON CONFLICT (room_id) DO NOTHING`,
-        [id, rid]
+      const { rows: bookingRows } = await client.query(
+        `SELECT b.num_rooms, b.pax_men, b.pax_women, b.pax_children, rt.is_shared
+         FROM bookings b
+         JOIN room_types rt ON rt.id = b.room_type_id
+         WHERE b.id = $1`, [id]
       );
+      if (!bookingRows[0]) {
+        await client.query('ROLLBACK');
+        return res.status(404).json({ error: 'BOOKING_NOT_FOUND' });
+      }
+      const bInfo = bookingRows[0];
+      const needed = bInfo.num_rooms ?? 1;
+      if (roomIds.length !== needed) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({
+          error: 'ROOM_COUNT_MISMATCH',
+          message: `This booking needs ${needed} room(s); ${roomIds.length} selected.`,
+        });
+      }
+
+      const totalBeds = Math.max(1, (bInfo.pax_men || 0) + (bInfo.pax_women || 0) + (bInfo.pax_children || 0));
+      const alloc = await allocateRoomsForCheckin(client, {
+        bookingId: id,
+        roomIds,
+        isShared: !!bInfo.is_shared,
+        totalBedsNeeded: totalBeds,
+      });
+      if (alloc.error) {
+        await client.query('ROLLBACK');
+        return res.status(alloc.error.status).json({ error: alloc.error.code, message: alloc.error.message });
+      }
+
+      const { rows } = await client.query(
+        `UPDATE bookings SET room_id = $1, status = 'checked_in', ata_actual_arrival = now(), updated_at = now()
+         WHERE id = $2 RETURNING *`,
+        [roomIds[0], id]
+      );
+
+      await client.query(
+        `INSERT INTO audit_log (actor_id, action, entity_type, entity_id, metadata)
+         VALUES ($1, 'booking.checked_in', 'booking', $2, $3)`,
+        [req.user.id, id, JSON.stringify({ roomIds })]
+      );
+      await client.query('COMMIT');
+
+      for (const u of alloc.updatedStatuses) io.emit('room:status_changed', u);
+      io.to('role:receptionist').emit('booking:updated', rows[0]);
+      res.json(rows[0]);
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
     }
-    await pool.query(`UPDATE rooms SET status = 'occupied' WHERE id = ANY($1::uuid[])`, [roomIds]);
-
-    await pool.query(
-      `INSERT INTO audit_log (actor_id, action, entity_type, entity_id, metadata)
-       VALUES ($1, 'booking.checked_in', 'booking', $2, $3)`,
-      [req.user.id, id, JSON.stringify({ roomIds })]
-    );
-
-    for (const rid of roomIds) io.emit('room:status_changed', { roomId: rid, status: 'occupied' });
-    io.to('role:receptionist').emit('booking:updated', rows[0]);
-    res.json(rows[0]);
   }));
 
   // PATCH /bookings/:id/id-document — attach an ID photo URL to an existing
@@ -544,11 +878,11 @@ module.exports = function (io) {
       );
       const roomIds = assigned.map((a) => a.room_id);
       if (roomIds.length === 0 && booking.room_id) roomIds.push(booking.room_id);
-      if (roomIds.length) {
-        await pool.query(`UPDATE rooms SET status = 'ready' WHERE id = ANY($1::uuid[])`, [roomIds]);
-        for (const rid of roomIds) io.emit('room:status_changed', { roomId: rid, status: 'ready' });
-      }
       await pool.query(`DELETE FROM booking_rooms WHERE booking_id = $1`, [id]);
+      for (const rid of roomIds) {
+        const nextStatus = await syncRoomStatus(pool, rid);
+        io.emit('room:status_changed', { roomId: rid, status: nextStatus });
+      }
     }
 
     await pool.query(

@@ -2,7 +2,8 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { Plus, Phone, Check, X, Users, Calendar, Clock, Upload, QrCode, AlertCircle, Eye, LogIn as CheckInIcon } from 'lucide-react';
 import QRUploadTrigger from './QRUploadTrigger';
 import GuestDetailModal from './GuestDetailModal';
-import { fetchArray } from '../lib/api';
+import SantReferenceInput from './SantReferenceInput';
+import { fetchArray, fetchObject } from '../lib/api';
 
 /**
  * WalkInBookingPanel
@@ -20,7 +21,7 @@ import { fetchArray } from '../lib/api';
  *
  * props.apiBaseUrl, props.token, props.roomTypes, props.socket
  */
-export default function WalkInBookingPanel({ apiBaseUrl, token, roomTypes, socket }) {
+export default function WalkInBookingPanel({ apiBaseUrl, token, roomTypes, socket, onBookingCreated }) {
   const [pending, setPending] = useState([]);
   const [showNewForm, setShowNewForm] = useState(false);
   const [decidingBooking, setDecidingBooking] = useState(null);
@@ -53,12 +54,16 @@ export default function WalkInBookingPanel({ apiBaseUrl, token, roomTypes, socke
     });
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));
-      throw new Error(body.error === 'CHECKOUT_BEFORE_CHECKIN'
+      const msg = body.error === 'CHECKOUT_BEFORE_CHECKIN'
         ? 'Check-out must be after check-in.'
-        : 'Could not create the booking. Please check every field and try again.');
+        : (body.message || 'Could not create the booking. Please check every field and try again.');
+      throw new Error(msg);
     }
+    const created = await res.json();
     setShowNewForm(false);
     loadPending();
+    onBookingCreated?.(created);
+    return created;
   };
 
   const recordDecision = async (bookingId, decision) => {
@@ -119,6 +124,7 @@ export default function WalkInBookingPanel({ apiBaseUrl, token, roomTypes, socke
         <NewWalkInModal
           roomTypes={roomTypes}
           apiBaseUrl={apiBaseUrl}
+          token={token}
           onCancel={() => setShowNewForm(false)}
           onCreate={createWalkIn}
         />
@@ -148,29 +154,127 @@ export default function WalkInBookingPanel({ apiBaseUrl, token, roomTypes, socke
   );
 }
 
-function NewWalkInModal({ roomTypes, apiBaseUrl, onCancel, onCreate }) {
+export function NewWalkInModal({ roomTypes, apiBaseUrl, token, initialRoom = null, onCancel, onCreate }) {
+  const today = new Date().toISOString().slice(0, 10);
+  const tomorrow = new Date(Date.now() + 86400000).toISOString().slice(0, 10);
+  const initialRoomTypeId =
+    initialRoom?.roomTypeId ||
+    (initialRoom?.roomType ? roomTypes.find((rt) => rt.name === initialRoom.roomType)?.id : '') ||
+    roomTypes[0]?.id ||
+    '';
+
   const [form, setForm] = useState({
-    guestName: '', mobile: '', paxMen: 1, paxWomen: 0, paxChildren: 0, numRooms: 1,
-    checkinDate: new Date().toISOString().slice(0, 10),
-    checkoutDate: '', santReferenceName: '', santReferenceMobile: '',
+    guestName: '', mobile: '', guestCity: '',
+    paxMen: 1, paxWomen: 0, paxChildren: 0, numRooms: 1,
+    checkinDate: today,
+    checkoutDate: tomorrow,
+    santReferenceName: '', santReferenceMobile: '',
     preferredArrivalTime: '', preferredDepartureTime: '',
-    roomTypeId: roomTypes[0]?.id ?? '',
+    roomTypeId: initialRoomTypeId,
   });
+  const [checkinNow, setCheckinNow] = useState(true);
+  const [autoApprove, setAutoApprove] = useState(true);
+  const [billingTier, setBillingTier] = useState('paid');
+  const [discountPercent, setDiscountPercent] = useState(0);
+  const [approvalNote, setApprovalNote] = useState('');
+  const [collectNow, setCollectNow] = useState(false);
+  const [payAmount, setPayAmount] = useState('');
+  const [payMethod, setPayMethod] = useState('cash');
+  const [availableRooms, setAvailableRooms] = useState([]);
+  const [selectedRoomIds, setSelectedRoomIds] = useState(initialRoom?.id ? [initialRoom.id] : []);
+  const [loadingRooms, setLoadingRooms] = useState(false);
+  const [addons, setAddons] = useState([]);
+  const [selectedAddons, setSelectedAddons] = useState({}); // addonId -> qty
+
   const [idMethod, setIdMethod] = useState('pc'); // 'pc' | 'qr'
   const [idDocumentUrl, setIdDocumentUrl] = useState(null);
   const [uploadingId, setUploadingId] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
+  const [fieldRules, setFieldRules] = useState({
+    guestCity: 'optional',
+    santReferenceName: 'required',
+    santReferenceMobile: 'optional',
+    preferredArrivalTime: 'optional',
+    preferredDepartureTime: 'optional',
+    idDocument: 'optional',
+  });
 
-  const update = (patch) => setForm((prev) => ({ ...prev, ...patch }));
+  useEffect(() => {
+    let active = true;
+    fetchObject(`${apiBaseUrl}/settings`, {}, {}).then((s) => {
+      if (!active) return;
+      const walkinCfg = s?.booking_form_config?.walkin;
+      if (walkinCfg && typeof walkinCfg === 'object') {
+        setFieldRules((prev) => ({ ...prev, ...walkinCfg }));
+      }
+    });
+    fetchArray(`${apiBaseUrl}/inventory/addons`).then((list) => {
+      if (active) setAddons(list);
+    });
+    return () => { active = false; };
+  }, [apiBaseUrl]);
+
+  const update = (patch) => {
+    setForm((prev) => {
+      const next = { ...prev, ...patch };
+      // If user switches check-in date to a future day, default off immediate check-in
+      if (patch.checkinDate !== undefined && patch.checkinDate > today) {
+        setCheckinNow(false);
+      }
+      return next;
+    });
+  };
+
+  useEffect(() => {
+    if (!checkinNow || !form.roomTypeId || !token) {
+      setAvailableRooms([]);
+      return;
+    }
+    let active = true;
+    setLoadingRooms(true);
+    fetchArray(`${apiBaseUrl}/rooms/available?roomTypeId=${form.roomTypeId}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    }).then((rooms) => {
+      if (!active) return;
+      setAvailableRooms(rooms);
+      setSelectedRoomIds((prev) => {
+        const validPrev = prev.filter((id) => rooms.some((r) => r.id === id));
+        if (validPrev.length > 0) return validPrev.slice(0, form.numRooms);
+        if (initialRoom?.id && rooms.some((r) => r.id === initialRoom.id)) return [initialRoom.id];
+        if (form.numRooms === 1 && rooms[0]) return [rooms[0].id];
+        return [];
+      });
+      setLoadingRooms(false);
+    });
+    return () => { active = false; };
+  }, [checkinNow, form.roomTypeId, form.numRooms, apiBaseUrl, token, initialRoom]);
+
+  const toggleRoom = (id) => {
+    setSelectedRoomIds((prev) => {
+      if (prev.includes(id)) return prev.filter((x) => x !== id);
+      if (form.numRooms === 1) return [id];
+      if (prev.length >= form.numRooms) return prev;
+      return [...prev, id];
+    });
+  };
 
   const validate = () => {
     if (!form.guestName.trim()) return 'Guest name is required.';
     if (!form.mobile.trim()) return 'Mobile number is required.';
+    if (fieldRules.guestCity === 'required' && !form.guestCity.trim()) return 'City / Address is required.';
     if (!form.checkinDate) return 'Check-in date is required.';
     if (!form.checkoutDate) return 'Check-out date is required.';
     if (new Date(form.checkoutDate) <= new Date(form.checkinDate)) return 'Check-out must be after check-in.';
+    if (fieldRules.preferredArrivalTime === 'required' && !form.preferredArrivalTime) return 'Expected arrival time is required.';
+    if (fieldRules.preferredDepartureTime === 'required' && !form.preferredDepartureTime) return 'Expected departure time is required.';
+    if (fieldRules.santReferenceName === 'required' && !form.santReferenceName.trim()) return 'Sant reference name is required.';
+    if (fieldRules.santReferenceMobile === 'required' && !form.santReferenceMobile.trim()) return 'Sant reference number is required.';
+    if (fieldRules.idDocument === 'required' && !idDocumentUrl) return 'Government ID upload is required.';
     if (!form.roomTypeId) return 'Please select a room type.';
+    if (checkinNow && selectedRoomIds.length !== form.numRooms) {
+      return `Please select ${form.numRooms} ready room${form.numRooms > 1 ? 's' : ''} for immediate check-in.`;
+    }
     return null;
   };
 
@@ -199,7 +303,29 @@ function NewWalkInModal({ roomTypes, apiBaseUrl, onCancel, onCreate }) {
     setError('');
     setSubmitting(true);
     try {
-      await onCreate({ ...form, idDocumentUrl });
+      const extraCharges = addons
+        .filter((a) => (selectedAddons[a.id] || 0) > 0)
+        .map((a) => {
+          const qty = selectedAddons[a.id];
+          return {
+            label: qty > 1 ? `${a.name} × ${qty}` : a.name,
+            amount: Number(a.price) * qty,
+          };
+        });
+      await onCreate({
+        ...form,
+        idDocumentUrl,
+        checkinNow,
+        autoApprove: checkinNow ? true : autoApprove,
+        roomIds: checkinNow ? selectedRoomIds : [],
+        billingTier,
+        discountPercent,
+        approvalNote,
+        extraCharges,
+        payment: checkinNow && collectNow && Number(payAmount) > 0
+          ? { amount: Number(payAmount), method: payMethod }
+          : null,
+      });
     } catch (err) {
       setError(err.message);
     } finally {
@@ -210,7 +336,14 @@ function NewWalkInModal({ roomTypes, apiBaseUrl, onCancel, onCreate }) {
   return (
     <div className="fixed inset-0 bg-[#2B1610]/60 flex items-center justify-center p-4 z-50">
       <div className="bg-[#F8F4EC] max-w-lg w-full p-6 max-h-[90vh] overflow-y-auto">
-        <h3 className="font-serif text-lg text-[#2B1610] mb-4">New booking</h3>
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="font-serif text-lg text-[#2B1610]">
+            {initialRoom ? `Check in to Room ${initialRoom.roomNumber}` : 'New booking'}
+          </h3>
+          <button type="button" onClick={onCancel} className="text-[#2B1610]/40 hover:text-[#2B1610]">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
 
         {error && (
           <div className="flex items-start gap-2 bg-[#8C3B3B]/10 border border-[#8C3B3B]/30 text-[#8C3B3B] text-sm px-3 py-2 mb-3">
@@ -221,17 +354,25 @@ function NewWalkInModal({ roomTypes, apiBaseUrl, onCancel, onCreate }) {
 
         <div className="grid grid-cols-2 gap-3 mb-3">
           <input
-            placeholder="Guest name"
+            placeholder="Guest name *"
             value={form.guestName}
             onChange={(e) => update({ guestName: e.target.value })}
             className="border border-[#2B1610]/20 bg-white px-3 py-2 text-sm col-span-2"
           />
           <input
-            placeholder="Mobile"
+            placeholder="Mobile *"
             value={form.mobile}
             onChange={(e) => update({ mobile: e.target.value })}
-            className="border border-[#2B1610]/20 bg-white px-3 py-2 text-sm col-span-2"
+            className={`border border-[#2B1610]/20 bg-white px-3 py-2 text-sm ${fieldRules.guestCity === 'hidden' ? 'col-span-2' : ''}`}
           />
+          {fieldRules.guestCity !== 'hidden' && (
+            <input
+              placeholder={`City / Address ${fieldRules.guestCity === 'required' ? '*' : '(optional)'}`}
+              value={form.guestCity}
+              onChange={(e) => update({ guestCity: e.target.value })}
+              className="border border-[#2B1610]/20 bg-white px-3 py-2 text-sm"
+            />
+          )}
         </div>
 
         <div className="mb-3">
@@ -252,18 +393,17 @@ function NewWalkInModal({ roomTypes, apiBaseUrl, onCancel, onCreate }) {
           </div>
         </div>
 
-        <div className="mb-3">
-          <label className="text-xs uppercase tracking-wide text-[#2B1610]/50 block mb-1.5">Number of rooms</label>
-          <input
-            type="number" min={1} value={form.numRooms}
-            onChange={(e) => update({ numRooms: Math.max(1, Number(e.target.value)) })}
-            className="border border-[#2B1610]/20 bg-white px-3 py-2 text-sm w-32"
-          />
-        </div>
-
-        <div className="grid grid-cols-2 gap-3 mb-3">
+        <div className="grid grid-cols-3 gap-3 mb-3">
           <div>
-            <label className="text-xs uppercase tracking-wide text-[#2B1610]/50 flex items-center gap-1.5 mb-1.5">
+            <label className="text-xs uppercase tracking-wide text-[#2B1610]/50 block mb-1.5">Rooms</label>
+            <input
+              type="number" min={1} value={form.numRooms}
+              onChange={(e) => update({ numRooms: Math.max(1, Number(e.target.value)) })}
+              className="border border-[#2B1610]/20 bg-white px-3 py-2 text-sm w-full"
+            />
+          </div>
+          <div>
+            <label className="text-xs uppercase tracking-wide text-[#2B1610]/50 flex items-center gap-1 mb-1.5">
               <Calendar className="w-3.5 h-3.5" /> Check-in
             </label>
             <input
@@ -273,7 +413,7 @@ function NewWalkInModal({ roomTypes, apiBaseUrl, onCancel, onCreate }) {
             />
           </div>
           <div>
-            <label className="text-xs uppercase tracking-wide text-[#2B1610]/50 flex items-center gap-1.5 mb-1.5">
+            <label className="text-xs uppercase tracking-wide text-[#2B1610]/50 flex items-center gap-1 mb-1.5">
               <Calendar className="w-3.5 h-3.5" /> Check-out
             </label>
             <input
@@ -284,43 +424,45 @@ function NewWalkInModal({ roomTypes, apiBaseUrl, onCancel, onCreate }) {
           </div>
         </div>
 
-        {/* Expected arrival / departure times — optional; feed the scheduled
-            date+time shown on the booking before the guest actually checks in. */}
-        <div className="grid grid-cols-2 gap-3 mb-3">
-          <div>
-            <label className="text-xs uppercase tracking-wide text-[#2B1610]/50 flex items-center gap-1.5 mb-1.5">
-              <Clock className="w-3.5 h-3.5" /> Expected arrival (optional)
-            </label>
-            <input
-              type="time" value={form.preferredArrivalTime}
-              onChange={(e) => update({ preferredArrivalTime: e.target.value })}
-              className="border border-[#2B1610]/20 bg-white px-3 py-2 text-sm w-full"
-            />
+        {/* Expected arrival / departure times — admin-controlled */}
+        {(fieldRules.preferredArrivalTime !== 'hidden' || fieldRules.preferredDepartureTime !== 'hidden') && (
+          <div className={`grid ${fieldRules.preferredArrivalTime !== 'hidden' && fieldRules.preferredDepartureTime !== 'hidden' ? 'grid-cols-2' : 'grid-cols-1'} gap-3 mb-3`}>
+            {fieldRules.preferredArrivalTime !== 'hidden' && (
+              <div>
+                <label className="text-xs uppercase tracking-wide text-[#2B1610]/50 flex items-center gap-1.5 mb-1.5">
+                  <Clock className="w-3.5 h-3.5" /> Expected arrival {fieldRules.preferredArrivalTime === 'required' ? '*' : '(optional)'}
+                </label>
+                <input
+                  type="time" value={form.preferredArrivalTime}
+                  onChange={(e) => update({ preferredArrivalTime: e.target.value })}
+                  className="border border-[#2B1610]/20 bg-white px-3 py-2 text-sm w-full"
+                />
+              </div>
+            )}
+            {fieldRules.preferredDepartureTime !== 'hidden' && (
+              <div>
+                <label className="text-xs uppercase tracking-wide text-[#2B1610]/50 flex items-center gap-1.5 mb-1.5">
+                  <Clock className="w-3.5 h-3.5" /> Expected departure {fieldRules.preferredDepartureTime === 'required' ? '*' : '(optional)'}
+                </label>
+                <input
+                  type="time" value={form.preferredDepartureTime}
+                  onChange={(e) => update({ preferredDepartureTime: e.target.value })}
+                  className="border border-[#2B1610]/20 bg-white px-3 py-2 text-sm w-full"
+                />
+              </div>
+            )}
           </div>
-          <div>
-            <label className="text-xs uppercase tracking-wide text-[#2B1610]/50 flex items-center gap-1.5 mb-1.5">
-              <Clock className="w-3.5 h-3.5" /> Expected departure (optional)
-            </label>
-            <input
-              type="time" value={form.preferredDepartureTime}
-              onChange={(e) => update({ preferredDepartureTime: e.target.value })}
-              className="border border-[#2B1610]/20 bg-white px-3 py-2 text-sm w-full"
-            />
-          </div>
-        </div>
+        )}
 
-        <div className="grid grid-cols-2 gap-3 mb-3">
-          <input
-            placeholder="Sant reference — name (optional)"
-            value={form.santReferenceName}
-            onChange={(e) => update({ santReferenceName: e.target.value })}
-            className="border border-[#2B1610]/20 bg-white px-3 py-2 text-sm"
-          />
-          <input
-            placeholder="Sant reference — number (optional)"
-            value={form.santReferenceMobile}
-            onChange={(e) => update({ santReferenceMobile: e.target.value })}
-            className="border border-[#2B1610]/20 bg-white px-3 py-2 text-sm"
+        <div className="mb-3">
+          <SantReferenceInput
+            nameValue={form.santReferenceName}
+            mobileValue={form.santReferenceMobile}
+            onChange={update}
+            apiBaseUrl={apiBaseUrl}
+            token={token}
+            nameRule={fieldRules.santReferenceName}
+            mobileRule={fieldRules.santReferenceMobile}
           />
         </div>
 
@@ -335,9 +477,196 @@ function NewWalkInModal({ roomTypes, apiBaseUrl, onCancel, onCreate }) {
           </select>
         </div>
 
+        {/* 1-Step Check-in & Billing */}
+        <div className="border border-[#4A6D5C]/30 bg-[#4A6D5C]/5 p-3.5 mb-4 space-y-3">
+          <label className="flex items-center gap-2 text-sm font-medium text-[#2B1610] cursor-pointer">
+            <input
+              type="checkbox"
+              checked={checkinNow}
+              onChange={(e) => setCheckinNow(e.target.checked)}
+              className="accent-[#4A6D5C]"
+            />
+            <CheckInIcon className="w-4 h-4 text-[#4A6D5C]" />
+            Check in immediately & assign room
+          </label>
+
+          {!checkinNow && (
+            <label className="flex items-center gap-2 text-xs text-[#2B1610]/70 cursor-pointer pl-6">
+              <input
+                type="checkbox"
+                checked={autoApprove}
+                onChange={(e) => setAutoApprove(e.target.checked)}
+                className="accent-[#B8792F]"
+              />
+              Already approved by Swami Ji (skip pending queue)
+            </label>
+          )}
+
+          {checkinNow && (
+            <div>
+              <p className="text-xs text-[#2B1610]/60 mb-1.5">
+                Select {form.numRooms} ready room{form.numRooms > 1 ? 's' : ''} ({selectedRoomIds.length}/{form.numRooms} selected):
+              </p>
+              {loadingRooms ? (
+                <p className="text-xs text-[#2B1610]/40">Loading ready rooms…</p>
+              ) : availableRooms.length === 0 ? (
+                <p className="text-xs text-[#8C3B3B]">No ready rooms of this type right now.</p>
+              ) : (
+                <div className="flex flex-wrap gap-1.5 max-h-28 overflow-y-auto">
+                  {availableRooms.map((r) => {
+                    const checked = selectedRoomIds.includes(r.id);
+                    const capped = !checked && form.numRooms > 1 && selectedRoomIds.length >= form.numRooms;
+                    return (
+                      <button
+                        type="button"
+                        key={r.id}
+                        disabled={capped}
+                        onClick={() => toggleRoom(r.id)}
+                        className={`px-2.5 py-1.5 text-xs border transition-colors ${
+                          checked
+                            ? 'bg-[#4A6D5C] text-white border-[#4A6D5C]'
+                            : capped
+                            ? 'opacity-40 border-[#2B1610]/15 bg-white cursor-not-allowed'
+                            : 'bg-white border-[#2B1610]/20 text-[#2B1610] hover:border-[#4A6D5C]'
+                        }`}
+                      >
+                        {r.room_number}
+                        {r.is_shared && (
+                          <span className="ml-1 opacity-75">
+                            ({r.available_beds}/{r.bed_count} free)
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+
+          {(checkinNow || autoApprove) && (
+            <div className="pt-2 border-t border-[#2B1610]/10 space-y-2">
+              <div className="flex flex-wrap gap-1.5">
+                {[
+                  { id: 'paid', label: 'Full price' },
+                  { id: 'foc', label: 'FOC (Free)' },
+                  { id: 'discount', label: 'Discount' },
+                ].map((opt) => (
+                  <button
+                    type="button"
+                    key={opt.id}
+                    onClick={() => setBillingTier(opt.id)}
+                    className={`px-2.5 py-1 text-xs border ${
+                      billingTier === opt.id
+                        ? 'border-[#B8792F] bg-[#B8792F]/15 text-[#2B1610] font-medium'
+                        : 'border-[#2B1610]/15 bg-white text-[#2B1610]/60'
+                    }`}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+              {billingTier === 'discount' && (
+                <input
+                  type="number" min={0} max={100} placeholder="Discount % (e.g. 50)"
+                  value={discountPercent}
+                  onChange={(e) => setDiscountPercent(Number(e.target.value))}
+                  className="border border-[#2B1610]/20 bg-white px-2.5 py-1.5 text-xs w-40"
+                />
+              )}
+
+              {checkinNow && billingTier !== 'foc' && (
+                <div className="pt-1">
+                  <label className="flex items-center gap-2 text-xs text-[#2B1610]/70 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={collectNow}
+                      onChange={(e) => setCollectNow(e.target.checked)}
+                      className="accent-[#4A6D5C]"
+                    />
+                    Collect payment now
+                  </label>
+                  {collectNow && (
+                    <div className="flex gap-2 mt-2">
+                      <input
+                        type="number" min={1} placeholder="Amount ₹"
+                        value={payAmount}
+                        onChange={(e) => setPayAmount(e.target.value)}
+                        className="border border-[#2B1610]/20 bg-white px-2.5 py-1.5 text-xs flex-1"
+                      />
+                      <select
+                        value={payMethod}
+                        onChange={(e) => setPayMethod(e.target.value)}
+                        className="border border-[#2B1610]/20 bg-white px-2 py-1.5 text-xs"
+                      >
+                        <option value="cash">CASH</option>
+                        <option value="upi">UPI</option>
+                        <option value="card">CARD</option>
+                      </select>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <input
+                placeholder="Approval note (optional, e.g. Swami Ji phone)"
+                value={approvalNote}
+                onChange={(e) => setApprovalNote(e.target.value)}
+                className="border border-[#2B1610]/20 bg-white px-2.5 py-1.5 text-xs w-full"
+              />
+
+              {addons.length > 0 && (
+                <div className="pt-2 border-t border-[#2B1610]/10">
+                  <p className="text-[11px] uppercase tracking-wide text-[#2B1610]/50 mb-1.5">Add-ons (tick if needed)</p>
+                  <div className="space-y-1.5">
+                    {addons.map((a) => {
+                      const qty = selectedAddons[a.id] || 0;
+                      return (
+                        <div key={a.id} className="flex items-center justify-between text-xs bg-white/70 border border-[#2B1610]/10 px-2.5 py-1.5">
+                          <label className="flex items-center gap-2 cursor-pointer flex-1">
+                            <input
+                              type="checkbox"
+                              checked={qty > 0}
+                              onChange={(e) => setSelectedAddons((prev) => ({
+                                ...prev,
+                                [a.id]: e.target.checked ? 1 : 0,
+                              }))}
+                              className="accent-[#4A6D5C]"
+                            />
+                            <span className="text-[#2B1610]">{a.name}</span>
+                            <span className="text-[#2B1610]/50">(₹{Number(a.price).toLocaleString('en-IN')})</span>
+                          </label>
+                          {qty > 0 && (
+                            <div className="flex items-center gap-1">
+                              <button
+                                type="button"
+                                onClick={() => setSelectedAddons((p) => ({ ...p, [a.id]: Math.max(0, qty - 1) }))}
+                                className="w-5 h-5 border border-[#2B1610]/20 text-center leading-none"
+                              >-</button>
+                              <span className="w-5 text-center">{qty}</span>
+                              <button
+                                type="button"
+                                onClick={() => setSelectedAddons((p) => ({ ...p, [a.id]: qty + 1 }))}
+                                className="w-5 h-5 border border-[#2B1610]/20 text-center leading-none"
+                              >+</button>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
         {/* ID upload — choice of PC file or QR to phone */}
-        <div className="mb-5">
-          <label className="text-xs uppercase tracking-wide text-[#2B1610]/50 block mb-1.5">Government ID</label>
+        {fieldRules.idDocument !== 'hidden' && (
+          <div className="mb-5">
+            <label className="text-xs uppercase tracking-wide text-[#2B1610]/50 block mb-1.5">
+              Government ID {fieldRules.idDocument === 'required' ? '*' : '(optional)'}
+            </label>
           <div className="flex gap-2 mb-2">
             <button
               type="button"
@@ -370,7 +699,8 @@ function NewWalkInModal({ roomTypes, apiBaseUrl, onCancel, onCreate }) {
           ) : (
             <QRUploadTrigger apiBaseUrl={apiBaseUrl} onUploaded={(url) => setIdDocumentUrl(url)} />
           )}
-        </div>
+          </div>
+        )}
 
         <div className="flex gap-2">
           <button onClick={onCancel} className="flex-1 border border-[#2B1610]/20 text-[#2B1610] py-2.5 text-sm hover:bg-[#2B1610]/5">
@@ -379,9 +709,13 @@ function NewWalkInModal({ roomTypes, apiBaseUrl, onCancel, onCreate }) {
           <button
             onClick={submit}
             disabled={submitting}
-            className="flex-1 bg-[#2B1610] text-[#F8F4EC] py-2.5 text-sm hover:bg-[#3d2118] disabled:opacity-60"
+            className={`flex-1 text-[#F8F4EC] py-2.5 text-sm disabled:opacity-60 ${
+              checkinNow ? 'bg-[#4A6D5C] hover:opacity-90' : 'bg-[#2B1610] hover:bg-[#3d2118]'
+            }`}
           >
-            {submitting ? 'Creating…' : 'Create booking'}
+            {submitting
+              ? (checkinNow ? 'Checking in…' : 'Creating…')
+              : (checkinNow ? 'Create & Check In Now' : 'Create booking')}
           </button>
         </div>
       </div>

@@ -119,6 +119,8 @@ const EDITABLE_KEYS = new Set([
   'bhojanshala_mobile',
   // Admin toggle: let the Reception desk approve on Swami Ji's behalf.
   'reception_approve_on_behalf',
+  // Admin-controlled booking form field rules (required / optional / hidden).
+  'booking_form_config',
 ]);
 
 router.put('/', requireAuth, requirePermission('can_manage_settings'), asyncHandler(async (req, res) => {

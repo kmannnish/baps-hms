@@ -15,9 +15,10 @@ module.exports = function (io) {
   router.get('/board', asyncHandler(async (req, res) => {
     const { rows } = await pool.query(
       `SELECT f.id AS floor_id, f.name AS floor_name, f.sort_order,
-              r.id AS room_id, r.room_number, r.status, r.bed_count, r.has_bathroom,
-              rt.name AS room_type,
-              b.id AS booking_id, b.guest_name, b.checkout_date,
+              r.id AS room_id, r.room_number, r.status, r.bed_count, r.has_bathroom, r.room_type_id,
+              rt.name AS room_type, rt.is_shared, rt.is_hall,
+              br.beds_used,
+              b.id AS booking_id, b.guest_name, b.mobile, b.checkout_date,
               b.pax_men, b.pax_women, b.pax_children,
               b.dine_breakfast, b.dine_lunch, b.dine_dinner,
               b.billing_tier, b.discount_percent, b.final_amount, b.is_paid,
@@ -27,11 +28,12 @@ module.exports = function (io) {
        LEFT JOIN room_types rt ON rt.id = r.room_type_id
        LEFT JOIN booking_rooms br ON br.room_id = r.id
        LEFT JOIN bookings b ON b.id = br.booking_id AND b.status = 'checked_in'
-       ORDER BY f.sort_order, r.room_number`
+       ORDER BY f.sort_order, r.room_number, b.created_at`
     );
 
     const floors = [];
     const byFloor = new Map();
+    const roomsById = new Map();
     for (const row of rows) {
       if (!byFloor.has(row.floor_id)) {
         const floor = { id: row.floor_id, name: row.floor_name, rooms: [] };
@@ -39,30 +41,55 @@ module.exports = function (io) {
         floors.push(floor);
       }
       if (row.room_id) {
-        byFloor.get(row.floor_id).rooms.push({
-          id: row.room_id,
-          roomNumber: row.room_number,
-          roomType: row.room_type,
-          status: row.status,
-          bedCount: row.bed_count,
-          hasBathroom: row.has_bathroom,
-          bookingId: row.booking_id,
-          guestName: row.guest_name,
-          checkoutTime: row.checkout_date,
-          paxMen: row.pax_men,
-          paxWomen: row.pax_women,
-          paxChildren: row.pax_children,
-          dineBreakfast: row.dine_breakfast,
-          dineLunch: row.dine_lunch,
-          dineDinner: row.dine_dinner,
-          billingTier: row.billing_tier,
-          discountPercent: row.discount_percent,
-          finalAmount: row.final_amount,
-          isPaid: row.is_paid,
-          amountPaid: row.amount_paid,
-          paymentStatus: row.payment_status,
-          idDocumentUrl: row.id_document_url,
-        });
+        let roomObj = roomsById.get(row.room_id);
+        if (!roomObj) {
+          roomObj = {
+            id: row.room_id,
+            roomNumber: row.room_number,
+            roomTypeId: row.room_type_id,
+            roomType: row.room_type,
+            isShared: !!row.is_shared,
+            isHall: !!row.is_hall,
+            status: row.status,
+            bedCount: row.bed_count,
+            occupiedCount: 0,
+            hasBathroom: row.has_bathroom,
+            activeGuests: [],
+            bookingId: null,
+            guestName: null,
+            checkoutTime: null,
+          };
+          roomsById.set(row.room_id, roomObj);
+          byFloor.get(row.floor_id).rooms.push(roomObj);
+        }
+        if (row.booking_id) {
+          const bedsUsed = Number(row.beds_used) || 1;
+          roomObj.occupiedCount += bedsUsed;
+          const guestEntry = {
+            bookingId: row.booking_id,
+            guestName: row.guest_name,
+            mobile: row.mobile,
+            bedsUsed,
+            checkoutTime: row.checkout_date,
+            paxMen: row.pax_men,
+            paxWomen: row.pax_women,
+            paxChildren: row.pax_children,
+            dineBreakfast: row.dine_breakfast,
+            dineLunch: row.dine_lunch,
+            dineDinner: row.dine_dinner,
+            billingTier: row.billing_tier,
+            discountPercent: row.discount_percent,
+            finalAmount: row.final_amount,
+            isPaid: row.is_paid,
+            amountPaid: row.amount_paid,
+            paymentStatus: row.payment_status,
+            idDocumentUrl: row.id_document_url,
+          };
+          roomObj.activeGuests.push(guestEntry);
+          if (!roomObj.bookingId) {
+            Object.assign(roomObj, guestEntry);
+          }
+        }
       }
     }
     res.json(floors);
@@ -71,10 +98,19 @@ module.exports = function (io) {
   router.get('/available', requireAuth, requirePermission('can_checkin_checkout'), asyncHandler(async (req, res) => {
     const { roomTypeId } = req.query;
     const { rows } = await pool.query(
-      `SELECT r.id, r.room_number, r.bed_count, r.has_bathroom, f.name AS floor_name
+      `SELECT r.id, r.room_number, r.bed_count, r.has_bathroom, f.name AS floor_name,
+              rt.is_shared, rt.is_hall,
+              COALESCE(SUM(CASE WHEN b.status = 'checked_in' THEN br.beds_used ELSE 0 END), 0)::int AS occupied_beds,
+              GREATEST(0, r.bed_count - COALESCE(SUM(CASE WHEN b.status = 'checked_in' THEN br.beds_used ELSE 0 END), 0))::int AS available_beds
        FROM rooms r
        JOIN floors f ON f.id = r.floor_id
-       WHERE r.room_type_id = $1 AND r.status = 'ready'
+       JOIN room_types rt ON rt.id = r.room_type_id
+       LEFT JOIN booking_rooms br ON br.room_id = r.id
+       LEFT JOIN bookings b ON b.id = br.booking_id
+       WHERE r.room_type_id = $1 AND r.status <> 'maintenance'
+       GROUP BY r.id, f.sort_order, f.name, rt.is_shared, rt.is_hall
+       HAVING (rt.is_shared = false AND r.status = 'ready')
+           OR (rt.is_shared = true AND (r.bed_count - COALESCE(SUM(CASE WHEN b.status = 'checked_in' THEN br.beds_used ELSE 0 END), 0)) > 0)
        ORDER BY f.sort_order, r.room_number`,
       [roomTypeId]
     );

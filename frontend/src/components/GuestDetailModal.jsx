@@ -65,9 +65,13 @@ export default function GuestDetailModal({ bookingId, apiBaseUrl, token, onClose
         ) : (
           <>
             <h3 className="font-serif text-xl text-[#2B1610] mb-0.5 pr-8">{booking.guest_name}</h3>
-            <p className="flex items-center gap-1.5 text-sm text-[#2B1610]/60 mb-4">
+            <p className="flex items-center gap-1.5 text-sm text-[#2B1610]/60 mb-1">
               <Phone className="w-3.5 h-3.5" /> {booking.mobile}
             </p>
+            {booking.guest_city && (
+              <p className="text-xs text-[#2B1610]/50 mb-4">City / Address: {booking.guest_city}</p>
+            )}
+            {!booking.guest_city && <div className="mb-3" />}
 
             <div className="flex flex-wrap gap-2 mb-5">
               <span className="text-[11px] uppercase tracking-wide bg-[#B8792F]/15 text-[#B8792F] px-2 py-1">
