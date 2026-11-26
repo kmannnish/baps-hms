@@ -211,10 +211,14 @@ async function restoreBackup(slot) {
       `);
 
       const { stdout: toc } = await runPg('pg_restore', ['--list', restoreSrc]);
-      const presentTables = new Set();
+      const dataLines = [];
       for (const line of toc.split(/\r?\n/)) {
-        const m = /^\d+;\s+\d+\s+\d+\s+TABLE DATA\s+\S+\s+(\S+)/.exec(line.trim());
-        if (m) presentTables.add(m[1].replace(/^"|"$/g, ''));
+        const trimmed = line.trim();
+        if (!trimmed || trimmed.startsWith(';')) continue;
+        const m = /^\d+;\s+\d+\s+\d+\s+TABLE DATA\s+\S+\s+(\S+)/.exec(trimmed);
+        if (m) {
+          dataLines.push({ table: m[1].replace(/^"|"$/g, ''), line: trimmed });
+        }
       }
 
       const RESTORE_ORDER = [
@@ -236,22 +240,28 @@ async function restoreBackup(slot) {
         'sync_state',
         'addon_charges',
       ];
-      for (const tbl of presentTables) {
-        if (!RESTORE_ORDER.includes(tbl)) RESTORE_ORDER.push(tbl);
-      }
+      const rank = (t) => {
+        const idx = RESTORE_ORDER.indexOf(t);
+        return idx === -1 ? RESTORE_ORDER.length : idx;
+      };
+      dataLines.sort((a, b) => rank(a.table) - rank(b.table));
 
-      for (const tbl of RESTORE_ORDER) {
-        if (!presentTables.has(tbl)) continue;
+      const tocFile = `${restoreSrc}.toc.${process.pid}.${Date.now()}`;
+      fs.writeFileSync(tocFile, dataLines.map((d) => d.line).join('\n') + '\n', 'utf8');
+      try {
         await runPg('pg_restore', [
           '--data-only',
           '--no-owner',
           '--no-privileges',
-          '-t',
-          tbl,
+          '--single-transaction',
+          '-L',
+          tocFile,
           '-d',
           dbArg(),
           restoreSrc,
         ]);
+      } finally {
+        try { fs.unlinkSync(tocFile); } catch { /* ignore */ }
       }
     } else {
       await runPg('pg_restore', [

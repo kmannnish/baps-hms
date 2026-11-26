@@ -91,7 +91,7 @@ export default function BackupManager({ apiBaseUrl, token }) {
         body: fd,
       });
       const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.message || 'Upload & restore failed.');
+      if (!res.ok) throw new Error(data.message || `Upload & restore failed (HTTP ${res.status}).`);
       applyPayload(data);
       setNotice(`Database restored from "${file.name}".`);
     } catch (err) {
