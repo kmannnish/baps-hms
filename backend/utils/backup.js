@@ -189,16 +189,42 @@ async function restoreBackup(slot) {
   }
 
   try {
-    await runPg('pg_restore', [
-      '--clean',
-      '--if-exists',
-      '--no-owner',
-      '--no-privileges',
-      '--single-transaction',
-      '-d',
-      dbArg(),
-      restoreSrc,
-    ]);
+    if (process.env.DATABASE_URL) {
+      // Managed Postgres (e.g. Neon): non-superuser roles cannot DROP/COMMENT
+      // extensions during `pg_restore --clean`. Truncate all public tables and
+      // restore data-only in dependency order instead — this also preserves any
+      // newer schema columns/migrations already applied on Neon.
+      const pool = require('../db');
+      await pool.query(`
+        DO $$
+        DECLARE r RECORD;
+        BEGIN
+          FOR r IN (SELECT tablename FROM pg_tables WHERE schemaname = 'public') LOOP
+            EXECUTE 'TRUNCATE TABLE ' || quote_ident(r.tablename) || ' RESTART IDENTITY CASCADE';
+          END LOOP;
+        END $$;
+      `);
+      await runPg('pg_restore', [
+        '--data-only',
+        '--no-owner',
+        '--no-privileges',
+        '--single-transaction',
+        '-d',
+        dbArg(),
+        restoreSrc,
+      ]);
+    } else {
+      await runPg('pg_restore', [
+        '--clean',
+        '--if-exists',
+        '--no-owner',
+        '--no-privileges',
+        '--single-transaction',
+        '-d',
+        dbArg(),
+        restoreSrc,
+      ]);
+    }
   } finally {
     if (tmpCopy) {
       try { fs.unlinkSync(tmpCopy); } catch { /* ignore */ }
