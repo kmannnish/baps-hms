@@ -68,7 +68,7 @@ function dbArg() {
   return process.env.DATABASE_URL || process.env.PGDATABASE || 'baps_hms';
 }
 
-// Spawn a pg_* binary; resolve with trimmed stderr on exit 0, reject with the
+// Spawn a pg_* binary; resolve with { stdout, stderr } on exit 0, reject with the
 // captured stderr otherwise. ENOENT (binary not installed) is reported as a
 // clear, actionable error.
 function runPg(bin, args) {
@@ -79,7 +79,12 @@ function runPg(bin, args) {
     } catch (err) {
       return reject(new Error(`${bin} could not be started: ${err.message}`));
     }
+    let stdout = '';
     let stderr = '';
+    child.stdout.on('data', (d) => {
+      stdout += d.toString();
+      if (stdout.length > 200000) stdout = stdout.slice(-200000);
+    });
     child.stderr.on('data', (d) => {
       stderr += d.toString();
       if (stderr.length > 8000) stderr = stderr.slice(-8000); // bound memory
@@ -92,7 +97,7 @@ function runPg(bin, args) {
       );
     });
     child.on('close', (code) => {
-      if (code === 0) resolve(stderr.trim());
+      if (code === 0) resolve({ stdout, stderr: stderr.trim() });
       else reject(new Error(`${bin} exited with code ${code}${stderr ? `: ${stderr.trim()}` : ''}`));
     });
   });
@@ -191,9 +196,9 @@ async function restoreBackup(slot) {
   try {
     if (process.env.DATABASE_URL) {
       // Managed Postgres (e.g. Neon): non-superuser roles cannot DROP/COMMENT
-      // extensions during `pg_restore --clean`. Truncate all public tables and
-      // restore data-only in dependency order instead — this also preserves any
-      // newer schema columns/migrations already applied on Neon.
+      // extensions or use --disable-triggers. Truncate all public tables and
+      // restore data-only in parent-before-child table order so all foreign keys
+      // are satisfied cleanly.
       const pool = require('../db');
       await pool.query(`
         DO $$
@@ -204,15 +209,50 @@ async function restoreBackup(slot) {
           END LOOP;
         END $$;
       `);
-      await runPg('pg_restore', [
-        '--data-only',
-        '--no-owner',
-        '--no-privileges',
-        '--single-transaction',
-        '-d',
-        dbArg(),
-        restoreSrc,
-      ]);
+
+      const { stdout: toc } = await runPg('pg_restore', ['--list', restoreSrc]);
+      const presentTables = new Set();
+      for (const line of toc.split(/\r?\n/)) {
+        const m = /^\d+;\s+\d+\s+\d+\s+TABLE DATA\s+\S+\s+(\S+)/.exec(line.trim());
+        if (m) presentTables.add(m[1].replace(/^"|"$/g, ''));
+      }
+
+      const RESTORE_ORDER = [
+        'permissions',
+        'roles',
+        'role_permissions',
+        'users',
+        'settings',
+        'floors',
+        'room_types',
+        'rooms',
+        'bookings',
+        'booking_rooms',
+        'payments',
+        'luggage_counter',
+        'luggage_tokens',
+        'notification_sounds',
+        'audit_log',
+        'sync_state',
+        'addon_charges',
+      ];
+      for (const tbl of presentTables) {
+        if (!RESTORE_ORDER.includes(tbl)) RESTORE_ORDER.push(tbl);
+      }
+
+      for (const tbl of RESTORE_ORDER) {
+        if (!presentTables.has(tbl)) continue;
+        await runPg('pg_restore', [
+          '--data-only',
+          '--no-owner',
+          '--no-privileges',
+          '-t',
+          tbl,
+          '-d',
+          dbArg(),
+          restoreSrc,
+        ]);
+      }
     } else {
       await runPg('pg_restore', [
         '--clean',
