@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Plus, Phone, Check, X, Users, Calendar, Clock, Upload, QrCode, AlertCircle, Eye, LogIn as CheckInIcon } from 'lucide-react';
+import { Plus, Phone, Check, X, Users, Calendar, Clock, Upload, QrCode, AlertCircle, Eye, LogIn as CheckInIcon, MessageCircle, Printer, CheckCircle2 } from 'lucide-react';
 import QRUploadTrigger from './QRUploadTrigger';
 import GuestDetailModal from './GuestDetailModal';
 import SantReferenceInput from './SantReferenceInput';
 import { fetchArray, fetchObject } from '../lib/api';
+import { openWhatsAppReceipt, printReceipt } from '../lib/receipt';
 
 /**
  * WalkInBookingPanel
@@ -24,6 +25,7 @@ import { fetchArray, fetchObject } from '../lib/api';
 export default function WalkInBookingPanel({ apiBaseUrl, token, roomTypes, socket, onBookingCreated }) {
   const [pending, setPending] = useState([]);
   const [showNewForm, setShowNewForm] = useState(false);
+  const [recentBooking, setRecentBooking] = useState(null);
   const [decidingBooking, setDecidingBooking] = useState(null);
   const [viewingBookingId, setViewingBookingId] = useState(null);
 
@@ -61,6 +63,7 @@ export default function WalkInBookingPanel({ apiBaseUrl, token, roomTypes, socke
     }
     const created = await res.json();
     setShowNewForm(false);
+    setRecentBooking(created);
     loadPending();
     onBookingCreated?.(created);
     return created;
@@ -87,6 +90,42 @@ export default function WalkInBookingPanel({ apiBaseUrl, token, roomTypes, socke
           <Plus className="w-4 h-4" /> New booking
         </button>
       </div>
+
+      {recentBooking && (
+        <div className="border border-[#4A6D5C]/30 bg-[#4A6D5C]/5 p-4 mb-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="flex items-start gap-2.5">
+            <CheckCircle2 className="w-5 h-5 text-[#4A6D5C] mt-0.5 shrink-0" />
+            <div>
+              <p className="text-sm font-medium text-[#2B1610]">
+                {recentBooking.guest_name} — {recentBooking.status === 'checked_in' ? 'Checked in!' : `Booking ${recentBooking.status}`}
+              </p>
+              <p className="text-xs text-[#2B1610]/60">
+                Booking ID: <span className="font-mono font-semibold">{recentBooking.booking_code}</span> · {recentBooking.mobile}
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 flex-wrap">
+            <button
+              onClick={() => openWhatsAppReceipt(recentBooking)}
+              className="flex items-center gap-1.5 bg-[#4A6D5C] text-white px-3 py-1.5 text-xs hover:opacity-90"
+            >
+              <MessageCircle className="w-3.5 h-3.5" /> Send WhatsApp
+            </button>
+            <button
+              onClick={() => printReceipt(recentBooking, { apiBaseUrl, token })}
+              className="flex items-center gap-1.5 border border-[#2B1610]/20 bg-white text-[#2B1610] px-3 py-1.5 text-xs hover:bg-[#2B1610]/5"
+            >
+              <Printer className="w-3.5 h-3.5" /> Print Receipt
+            </button>
+            <button
+              onClick={() => setRecentBooking(null)}
+              className="text-xs text-[#2B1610]/40 hover:text-[#2B1610] px-2"
+            >
+              Dismiss
+            </button>
+          </div>
+        </div>
+      )}
 
       {pending.length === 0 ? (
         <p className="text-sm text-[#2B1610]/40">No pending bookings.</p>

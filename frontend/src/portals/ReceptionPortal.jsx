@@ -392,11 +392,17 @@ export default function ReceptionPortal() {
   const buildConfirmationLink = (b) => {
     const tpl = waTemplates.approved
       ?? 'Jai Swaminarayan {{name}}, your booking for {{room}} is CONFIRMED. Status: {{status}}.';
-    const msg = tpl
+    const baseMsg = tpl
       .replace('{{name}}', b.guest_name || '')
-      .replace('{{status}}', 'approved')
+      .replace('{{status}}', b.status || 'approved')
       .replace('{{room}}', b.room_type_name || 'your room');
-    const phone = (b.mobile || '').replace(/\D/g, '');
+    const extras = [
+      b.booking_code ? `Booking ID: ${b.booking_code}` : null,
+      b.checkin_date && b.checkout_date ? `Dates: ${fmtDate(b.checkin_date)} to ${fmtDate(b.checkout_date)}` : null,
+    ].filter(Boolean).join('\n');
+    const msg = extras ? `${baseMsg}\n${extras}` : baseMsg;
+    const rawPhone = (b.mobile || '').replace(/\D/g, '');
+    const phone = rawPhone.length === 10 ? `91${rawPhone}` : rawPhone;
     return `https://wa.me/${phone}?text=${encodeURIComponent(msg)}`;
   };
 
@@ -759,9 +765,12 @@ export default function ReceptionPortal() {
 // confirm) and "upcoming" (view + confirm). `badge` is optional status markup.
 function CheckinListRow({ booking: b, badge = null, onViewId, confirmationLink, onCheckin, onEdit, onCancel }) {
   return (
-    <div className="border border-[#2B1610]/10 bg-white/40 p-4 flex items-center justify-between gap-4">
+    <div className="border border-[#2B1610]/10 bg-white/40 p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
       <div>
         <div className="flex items-center gap-2 flex-wrap">
+          {b.booking_code && (
+            <span className="font-mono text-[10px] bg-[#2B1610]/5 text-[#2B1610]/70 px-1.5 py-0.5">{b.booking_code}</span>
+          )}
           <p className="font-serif text-[#2B1610]">{b.guest_name}</p>
           {badge}
           {!b.id_document_url && (
@@ -774,7 +783,7 @@ function CheckinListRow({ booking: b, badge = null, onViewId, confirmationLink, 
         </p>
         {b.mobile && <p className="text-xs text-[#2B1610]/40">{b.mobile}</p>}
       </div>
-      <div className="flex items-center gap-2 shrink-0">
+      <div className="flex items-center gap-2 flex-wrap shrink-0">
         {onViewId && (
           <button
             onClick={onViewId}

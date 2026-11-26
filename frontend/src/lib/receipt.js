@@ -33,6 +33,7 @@ export function buildReceiptText(booking) {
 
   return [
     `Jai Swaminarayan ${booking.guest_name},`,
+    booking.booking_code ? `Booking ID: ${booking.booking_code}` : null,
     `Receipt — BAPS Jaipur Utara`,
     `Room: ${booking.room_type_name || '—'} ${booking.room_number || ''}`.trim(),
     `Dates: ${fmtDate(booking.checkin_date)} to ${fmtDate(booking.checkout_date)} (${nights} night${nights > 1 ? 's' : ''})`,
@@ -40,7 +41,7 @@ export function buildReceiptText(booking) {
     `Paid: Rs.${fmt(paid)}`,
     `Balance: Rs.${fmt(balance)}`,
     `Thank you for staying with us.`,
-  ].join('\n');
+  ].filter(Boolean).join('\n');
 }
 
 /**
