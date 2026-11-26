@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   DatabaseBackup, Save, Loader2, Download, RotateCcw, AlertTriangle,
-  Clock, CheckCircle2, HardDrive,
+  Clock, CheckCircle2, HardDrive, Upload,
 } from 'lucide-react';
 import { fetchObject } from '../lib/api';
 
@@ -70,6 +70,36 @@ export default function BackupManager({ apiBaseUrl, token }) {
   // Restore flow: the slot pending confirmation, and the in-flight state.
   const [restoreTarget, setRestoreTarget] = useState(null);
   const [restoring, setRestoring] = useState(false);
+  const [uploadingRestore, setUploadingRestore] = useState(false);
+
+  const uploadAndRestore = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    if (!window.confirm(`Restore database from "${file.name}"? This replaces all current data (a safety copy will be taken first).`)) {
+      return;
+    }
+    setUploadingRestore(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const fd = new FormData();
+      fd.append('dump', file);
+      const res = await fetch(`${apiBaseUrl}/backup/upload-restore`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+        body: fd,
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.message || 'Upload & restore failed.');
+      applyPayload(data);
+      setNotice(`Database restored from "${file.name}".`);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setUploadingRestore(false);
+    }
+  };
 
   const authHeaders = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
 
@@ -330,14 +360,25 @@ export default function BackupManager({ apiBaseUrl, token }) {
           <h3 className="font-serif text-lg text-[#2B1610] flex items-center gap-2">
             <HardDrive className="w-4 h-4 text-[#B8792F]" /> Backups on this PC
           </h3>
-          <button
-            onClick={backupNow}
-            disabled={backingUp || !toolsAvailable}
-            className="flex items-center gap-1.5 border border-[#B8792F] text-[#B8792F] px-4 py-2 text-sm hover:bg-[#B8792F]/10 disabled:opacity-50"
-          >
-            {backingUp ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <DatabaseBackup className="w-3.5 h-3.5" />}
-            Back up now
-          </button>
+          <div className="flex flex-wrap items-center gap-2">
+            <label
+              className={`flex items-center gap-1.5 border border-[#2B1610]/20 text-[#2B1610] px-3 py-2 text-sm hover:bg-[#2B1610]/5 cursor-pointer ${
+                uploadingRestore || !toolsAvailable ? 'opacity-50 pointer-events-none' : ''
+              }`}
+            >
+              {uploadingRestore ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
+              {uploadingRestore ? 'Restoring…' : 'Upload & restore .dump'}
+              <input type="file" accept=".dump" className="hidden" onChange={uploadAndRestore} disabled={uploadingRestore || !toolsAvailable} />
+            </label>
+            <button
+              onClick={backupNow}
+              disabled={backingUp || !toolsAvailable}
+              className="flex items-center gap-1.5 border border-[#B8792F] text-[#B8792F] px-4 py-2 text-sm hover:bg-[#B8792F]/10 disabled:opacity-50"
+            >
+              {backingUp ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <DatabaseBackup className="w-3.5 h-3.5" />}
+              Back up now
+            </button>
+          </div>
         </div>
 
         {error && (

@@ -13,10 +13,12 @@
 
 const express = require('express');
 const fs = require('fs');
+const multer = require('multer');
 const { requireAuth } = require('../middleware/requireAuth');
 const { requirePermission } = require('../middleware/requirePermission');
 const { asyncHandler } = require('../utils/asyncHandler');
 const {
+  BACKUP_DIR,
   listBackups,
   createBackup,
   restoreBackup,
@@ -25,6 +27,17 @@ const {
   slotFile,
   MANUAL_SLOTS,
 } = require('../utils/backup');
+
+const dumpUpload = multer({
+  storage: multer.diskStorage({
+    destination: (req, file, cb) => {
+      fs.mkdirSync(BACKUP_DIR, { recursive: true });
+      cb(null, BACKUP_DIR);
+    },
+    filename: (req, file, cb) => cb(null, 'baps_hms_manual.dump'),
+  }),
+  limits: { fileSize: 50 * 1024 * 1024 },
+});
 
 const pool = require('../db');
 const router = express.Router();
@@ -164,6 +177,35 @@ router.post(
         prerestoreTakenAt: result.prerestore?.modifiedAt || null,
       });
       res.json({ restored: true, slot, prerestore: result.prerestore, backups: listBackups() });
+    } catch (err) {
+      res.status(500).json({ error: 'RESTORE_FAILED', message: err.message });
+    }
+  })
+);
+
+// POST /backup/upload-restore — upload an external .dump file (e.g. from Mac)
+// into the 'manual' slot and restore it immediately.
+router.post(
+  '/upload-restore',
+  requireAuth,
+  requirePermission('can_manage_backups'),
+  dumpUpload.single('dump'),
+  asyncHandler(async (req, res) => {
+    if (!req.file) return res.status(400).json({ error: 'NO_FILE', message: 'Please select a .dump file.' });
+    if (!(await toolsAvailable())) {
+      return res.status(503).json({
+        error: 'PG_TOOLS_UNAVAILABLE',
+        message: 'PostgreSQL client tools (pg_restore) are not installed on the server.',
+      });
+    }
+    try {
+      const result = await restoreBackup('manual');
+      await auditLog(req.user.id, 'backup.uploaded_and_restored', {
+        filename: req.file.originalname,
+        sizeBytes: req.file.size,
+        prerestoreTakenAt: result.prerestore?.modifiedAt || null,
+      });
+      res.json({ restored: true, slot: 'manual', prerestore: result.prerestore, backups: listBackups() });
     } catch (err) {
       res.status(500).json({ error: 'RESTORE_FAILED', message: err.message });
     }
