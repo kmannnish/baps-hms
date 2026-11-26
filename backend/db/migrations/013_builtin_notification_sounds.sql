@@ -9,6 +9,13 @@
 --   psql "$DATABASE_URL" -f backend/db/migrations/013_builtin_notification_sounds.sql
 -- ============================================================================
 
+CREATE TABLE IF NOT EXISTS notification_sounds (
+    id         UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    label      VARCHAR(100) NOT NULL,
+    filename   VARCHAR(255) NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
 INSERT INTO notification_sounds (label, filename)
 SELECT v.label, v.filename
 FROM (VALUES
