@@ -263,6 +263,12 @@ export function NewWalkInModal({ roomTypes, apiBaseUrl, token, initialRoom = nul
   const update = (patch) => {
     setForm((prev) => {
       const next = { ...prev, ...patch };
+      if (patch.checkinDate) {
+        if (!prev.checkoutDate || prev.checkoutDate <= patch.checkinDate) {
+          const [y, m, d] = patch.checkinDate.split('-').map(Number);
+          next.checkoutDate = new Date(Date.UTC(y, m - 1, d + 1)).toISOString().slice(0, 10);
+        }
+      }
       // If user switches check-in date to a future day, default off immediate check-in
       if (patch.checkinDate !== undefined && patch.checkinDate > today) {
         setCheckinNow(false);
@@ -489,10 +495,20 @@ export function NewWalkInModal({ roomTypes, apiBaseUrl, token, initialRoom = nul
               <Calendar className="w-3.5 h-3.5" /> Check-out
             </label>
             <input
-              type="date" value={form.checkoutDate}
+              type="date"
+              min={form.checkinDate ? (() => {
+                const [y, m, d] = form.checkinDate.split('-').map(Number);
+                return new Date(Date.UTC(y, m - 1, d + 1)).toISOString().slice(0, 10);
+              })() : today}
+              value={form.checkoutDate}
               onChange={(e) => update({ checkoutDate: e.target.value })}
               className="border border-[#2B1610]/20 bg-white px-3 py-2 text-sm w-full"
             />
+            {form.checkinDate && (
+              <p className="mt-1 text-[11px] text-[#2B1610]/55">
+                Check-in: {form.checkinDate.split('-').reverse().join('-')} · {nights} night{nights === 1 ? '' : 's'}
+              </p>
+            )}
           </div>
         </div>
 

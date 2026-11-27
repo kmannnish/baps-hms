@@ -1,5 +1,22 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Info, Users, Calendar, Phone, User, CheckCircle2, AlertCircle, X, Clock } from 'lucide-react';
+
+function addDays(isoDate, days) {
+  if (!isoDate) return '';
+  const [y, m, d] = isoDate.split('-').map(Number);
+  return new Date(Date.UTC(y, m - 1, d + days)).toISOString().slice(0, 10);
+}
+
+function fmtShortDate(isoDate) {
+  if (!isoDate) return '';
+  const [y, m, d] = isoDate.split('-').map(Number);
+  return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString('en-IN', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+    timeZone: 'UTC',
+  });
+}
 
 /**
  * CustomerBookingForm
@@ -56,7 +73,28 @@ export default function CustomerBookingForm({ roomTypes = [], onSubmit, apiBaseU
   const [submitted, setSubmitted] = useState(false);
   const [error, setError] = useState('');
 
-  const update = (patch) => setForm((prev) => ({ ...prev, ...patch }));
+  const update = (patch) => {
+    setForm((prev) => {
+      const next = { ...prev, ...patch };
+      if (patch.checkinDate) {
+        if (!prev.checkoutDate || prev.checkoutDate <= patch.checkinDate) {
+          next.checkoutDate = addDays(patch.checkinDate, 1);
+        }
+      }
+      return next;
+    });
+  };
+
+  const todayIso = useMemo(() => {
+    const now = new Date();
+    return new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+  }, []);
+
+  const minCheckout = form.checkinDate ? addDays(form.checkinDate, 1) : todayIso;
+  const nights =
+    form.checkinDate && form.checkoutDate && form.checkoutDate > form.checkinDate
+      ? Math.round((new Date(form.checkoutDate) - new Date(form.checkinDate)) / 86400000)
+      : 0;
 
   // Re-check availability for every room type whenever dates or quantity change
   const checkAvailability = useCallback(async () => {
@@ -218,6 +256,7 @@ export default function CustomerBookingForm({ roomTypes = [], onSubmit, apiBaseU
         <Field label="Check-in" icon={Calendar}>
           <input
             type="date"
+            min={todayIso}
             value={form.checkinDate}
             onChange={(e) => update({ checkinDate: e.target.value })}
             className="w-full border border-[#2B1610]/20 bg-white px-3 py-2.5 text-sm text-[#2B1610] focus:outline-none focus:border-[#B8792F]"
@@ -226,10 +265,19 @@ export default function CustomerBookingForm({ roomTypes = [], onSubmit, apiBaseU
         <Field label="Check-out" icon={Calendar}>
           <input
             type="date"
+            min={minCheckout}
             value={form.checkoutDate}
             onChange={(e) => update({ checkoutDate: e.target.value })}
             className="w-full border border-[#2B1610]/20 bg-white px-3 py-2.5 text-sm text-[#2B1610] focus:outline-none focus:border-[#B8792F]"
           />
+          {form.checkinDate && (
+            <p className="mt-1.5 text-[11px] text-[#2B1610]/60">
+              Check-in: <span className="font-medium text-[#2B1610]">{fmtShortDate(form.checkinDate)}</span>
+              {nights > 0 && (
+                <span className="text-[#B8792F] font-medium"> · {nights} night{nights === 1 ? '' : 's'}</span>
+              )}
+            </p>
+          )}
         </Field>
       </div>
 
