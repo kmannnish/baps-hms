@@ -85,20 +85,13 @@ export default function CustomerPortal({ apiBaseUrl }) {
             className="absolute inset-x-12 inset-y-6 rounded-full blur-2xl opacity-30"
             style={{ background: 'radial-gradient(ellipse at center, #E3B368 0%, transparent 72%)' }}
           />
-          {/* Shimmering gold-masked SVG line art */}
-          <div
-            aria-label="BAPS Jaipur Mandir"
-            className="relative w-full h-full animate-shimmer-gold"
+          {/* Luminous gold Mandir SVG line art */}
+          <img
+            src={`${process.env.PUBLIC_URL}/lineart-jaipur.svg`}
+            alt="BAPS Jaipur Mandir"
+            className="relative w-full h-full object-contain select-none"
             style={{
-              backgroundImage: 'linear-gradient(120deg, #F8F4EC 0%, #E3B368 35%, #C77A34 65%, #F8F4EC 100%)',
-              WebkitMaskImage: `url(${process.env.PUBLIC_URL}/lineart-jaipur.svg)`,
-              maskImage: `url(${process.env.PUBLIC_URL}/lineart-jaipur.svg)`,
-              WebkitMaskRepeat: 'no-repeat',
-              maskRepeat: 'no-repeat',
-              WebkitMaskPosition: 'center',
-              maskPosition: 'center',
-              WebkitMaskSize: 'contain',
-              maskSize: 'contain',
+              filter: 'brightness(0) saturate(100%) invert(82%) sepia(32%) saturate(620%) hue-rotate(346deg) drop-shadow(0 0 18px rgba(227,179,104,0.45))',
             }}
           />
         </div>
