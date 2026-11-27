@@ -93,6 +93,7 @@ const EDITABLE_KEYS = new Set([
   'overstay_warning_minutes',
   'terms_and_conditions',
   'whatsapp_templates',
+  'whatsapp_booking_template',
   'notification_checkout_warning_minutes',
   'notification_sound_id',
   'late_checkout_rate_per_hour',

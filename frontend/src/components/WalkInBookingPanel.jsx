@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Plus, Phone, Check, X, Users, Calendar, Clock, Upload, QrCode, AlertCircle, Eye, LogIn as CheckInIcon, MessageCircle, Printer, CheckCircle2 } from 'lucide-react';
+import { Plus, Phone, Check, X, Users, Calendar, Clock, Upload, QrCode, AlertCircle, Eye, LogIn as CheckInIcon, MessageCircle, Printer, CheckCircle2, Copy } from 'lucide-react';
 import QRUploadTrigger from './QRUploadTrigger';
 import GuestDetailModal from './GuestDetailModal';
 import SantReferenceInput from './SantReferenceInput';
@@ -23,7 +23,44 @@ import { parseWhatsAppBooking } from '../lib/whatsappBookingParser';
  *
  * props.apiBaseUrl, props.token, props.roomTypes, props.socket
  */
+const DEFAULT_BOOKING_WA_TEMPLATE = `:*BAPS JAIPUR UTARA BOOKING* 🇦🇹
+
+1.Full Name :- 
+2.Mobile No :- 
+3.City :- 
+4.Arrival Date :- 
+5.Arrival Time :- 
+6.Departure Date :- 
+7.Departure Time :- 
+8.Total Person :- 
+      Gents :- 
+      Ladies :- 
+      Children :- 
+9.Room Require :- 
+      Dormitory :- 
+      Non AC Room :- 
+      AC Room :- 
+10.Sant Ref :- 
+11.AC Room - Rs 2100 /- Per day
+Non AC Room - Rs 1600 /- Per day`;
+
 export default function WalkInBookingPanel({ apiBaseUrl, token, roomTypes, socket, onBookingCreated }) {
+  const [waTemplate, setWaTemplate] = useState(DEFAULT_BOOKING_WA_TEMPLATE);
+  const [copiedTpl, setCopiedTpl] = useState(false);
+
+  useEffect(() => {
+    fetchObject(`${apiBaseUrl}/settings`, {}, {}).then((s) => {
+      if (s?.whatsapp_booking_template) setWaTemplate(s.whatsapp_booking_template);
+    });
+  }, [apiBaseUrl]);
+
+  const copyWaTemplate = async () => {
+    try {
+      await navigator.clipboard.writeText(waTemplate);
+      setCopiedTpl(true);
+      setTimeout(() => setCopiedTpl(false), 2500);
+    } catch { /* clipboard fallback ignored */ }
+  };
   const [pending, setPending] = useState([]);
   const [showNewForm, setShowNewForm] = useState(false);
   const [recentBooking, setRecentBooking] = useState(null);
@@ -82,14 +119,23 @@ export default function WalkInBookingPanel({ apiBaseUrl, token, roomTypes, socke
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-5">
+      <div className="flex items-center justify-between gap-2 mb-5 flex-wrap">
         <h3 className="font-serif text-lg text-[#2B1610]">Bookings</h3>
-        <button
-          onClick={() => setShowNewForm(true)}
-          className="flex items-center gap-1.5 bg-[#2B1610] text-[#F8F4EC] px-4 py-2 text-sm hover:bg-[#3d2118]"
-        >
-          <Plus className="w-4 h-4" /> New booking
-        </button>
+        <div className="flex items-center gap-2 flex-wrap">
+          <button
+            onClick={copyWaTemplate}
+            className="flex items-center gap-1.5 border border-[#4A6D5C]/40 bg-[#4A6D5C]/5 text-[#4A6D5C] px-3 py-2 text-sm hover:bg-[#4A6D5C]/10"
+          >
+            {copiedTpl ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+            {copiedTpl ? 'Template Copied!' : 'Copy WhatsApp Template'}
+          </button>
+          <button
+            onClick={() => setShowNewForm(true)}
+            className="flex items-center gap-1.5 bg-[#2B1610] text-[#F8F4EC] px-4 py-2 text-sm hover:bg-[#3d2118]"
+          >
+            <Plus className="w-4 h-4" /> New booking
+          </button>
+        </div>
       </div>
 
       {recentBooking && (

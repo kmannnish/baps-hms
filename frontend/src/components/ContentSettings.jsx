@@ -15,9 +15,31 @@ import { fetchObject, fetchArray } from '../lib/api';
  *
  * props.apiBaseUrl, props.token
  */
+const DEFAULT_BOOKING_WA_TEMPLATE = `:*BAPS JAIPUR UTARA BOOKING* 🇦🇹
+
+1.Full Name :- 
+2.Mobile No :- 
+3.City :- 
+4.Arrival Date :- 
+5.Arrival Time :- 
+6.Departure Date :- 
+7.Departure Time :- 
+8.Total Person :- 
+      Gents :- 
+      Ladies :- 
+      Children :- 
+9.Room Require :- 
+      Dormitory :- 
+      Non AC Room :- 
+      AC Room :- 
+10.Sant Ref :- 
+11.AC Room - Rs 2100 /- Per day
+Non AC Room - Rs 1600 /- Per day`;
+
 export default function ContentSettings({ apiBaseUrl, token }) {
   const [terms, setTerms] = useState('');
   const [templates, setTemplates] = useState({ approved: '', rejected: '', modified: '' });
+  const [bookingWaTemplate, setBookingWaTemplate] = useState(DEFAULT_BOOKING_WA_TEMPLATE);
   const [taxEnabled, setTaxEnabled] = useState(true);
   const [gstPercent, setGstPercent] = useState(5);
   const [checkinTime, setCheckinTime] = useState('14:00');
@@ -95,6 +117,7 @@ export default function ContentSettings({ apiBaseUrl, token }) {
     ]).then(([s, snds]) => {
       setTerms(s.terms_and_conditions ?? '');
       setTemplates(s.whatsapp_templates ?? { approved: '', rejected: '', modified: '' });
+      setBookingWaTemplate(s.whatsapp_booking_template || DEFAULT_BOOKING_WA_TEMPLATE);
       setTaxEnabled(s.tax_enabled !== false);
       setGstPercent(Number(s.gst_percent ?? 5));
       setCheckinTime(s.default_checkin_time ?? '14:00');
@@ -153,6 +176,7 @@ export default function ContentSettings({ apiBaseUrl, token }) {
         body: JSON.stringify({
           terms_and_conditions: terms,
           whatsapp_templates: templates,
+          whatsapp_booking_template: bookingWaTemplate,
           tax_enabled: taxEnabled,
           gst_percent: gstPercent,
           default_checkin_time: checkinTime,
@@ -456,6 +480,17 @@ export default function ContentSettings({ apiBaseUrl, token }) {
               />
             </div>
           ))}
+          <div>
+            <label className="text-xs uppercase tracking-wide text-[#2B1610]/50 block mb-1">
+              Guest Booking Request Template (1-click copy in Reception Booking tab)
+            </label>
+            <textarea
+              value={bookingWaTemplate}
+              onChange={(e) => setBookingWaTemplate(e.target.value)}
+              rows={9}
+              className="w-full border border-[#2B1610]/20 bg-white px-3 py-2 text-xs font-mono"
+            />
+          </div>
         </div>
       </div>
 
