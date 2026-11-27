@@ -141,6 +141,32 @@ export default function BhojanPanel({ apiBaseUrl, token, socket }) {
             </a>
           )}
           <button
+            onClick={async () => {
+              setSending(true);
+              setSendMsg(null);
+              try {
+                const res = await fetch(`${apiBaseUrl}/bhojan/send-telegram`, {
+                  method: 'POST',
+                  headers: { Authorization: `Bearer ${token}` },
+                });
+                const body = await res.json();
+                if (res.ok && body.sent) {
+                  setSendMsg({ ok: true, text: `Sent Bhojanshala count to ${body.recipients} Telegram chat(s).` });
+                } else {
+                  setSendMsg({ ok: false, text: body.error === 'NO_BHOJAN_CHAT_ID' ? 'Add Bhojanshala Telegram Chat ID in Admin Settings first.' : 'Telegram bot token not configured.' });
+                }
+              } catch {
+                setSendMsg({ ok: false, text: 'Network error — could not send to Telegram.' });
+              } finally {
+                setSending(false);
+              }
+            }}
+            disabled={sending}
+            className="flex items-center gap-1.5 bg-[#0088cc] text-white px-4 py-2 text-sm hover:opacity-90 disabled:opacity-60"
+          >
+            <Send className="w-3.5 h-3.5" /> Send Telegram
+          </button>
+          <button
             onClick={sendToKitchen}
             disabled={sending}
             className="flex items-center gap-1.5 bg-[#2B1610] text-[#F8F4EC] px-4 py-2 text-sm hover:bg-[#3d2118] disabled:opacity-60"

@@ -90,7 +90,8 @@ export async function printReceipt(booking, auth = {}) {
 
 export function openWhatsAppReceipt(booking) {
   const text = buildReceiptText(booking);
-  const phone = (booking.mobile || '').replace(/\D/g, '');
-  const url = `https://wa.me/${phone.startsWith('91') ? phone : '91' + phone}?text=${encodeURIComponent(text)}`;
+  const raw = (booking.mobile || '').replace(/\D/g, '');
+  const phone = raw.length === 10 ? `91${raw}` : raw;
+  const url = `https://wa.me/${phone}?text=${encodeURIComponent(text)}`;
   window.open(url, '_blank');
 }

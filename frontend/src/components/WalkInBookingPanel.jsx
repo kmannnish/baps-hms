@@ -5,6 +5,7 @@ import GuestDetailModal from './GuestDetailModal';
 import SantReferenceInput from './SantReferenceInput';
 import { fetchArray, fetchObject } from '../lib/api';
 import { openWhatsAppReceipt, printReceipt } from '../lib/receipt';
+import { parseWhatsAppBooking } from '../lib/whatsappBookingParser';
 
 /**
  * WalkInBookingPanel
@@ -228,6 +229,39 @@ export function NewWalkInModal({ roomTypes, apiBaseUrl, token, initialRoom = nul
   const [selectedAddons, setSelectedAddons] = useState({}); // addonId -> qty
 
   const [idMethod, setIdMethod] = useState('pc'); // 'pc' | 'qr'
+  const [showWaPaste, setShowWaPaste] = useState(false);
+  const [waRawText, setWaRawText] = useState('');
+  const [waParseNote, setWaParseNote] = useState('');
+
+  const handleParseWa = () => {
+    const parsed = parseWhatsAppBooking(waRawText);
+    if (!parsed) {
+      setWaParseNote('Could not detect booking fields. Please check the pasted text.');
+      return;
+    }
+    const hint = (parsed.roomRequire || '').toLowerCase();
+    const matchedRt =
+      roomTypes.find((rt) => hint && rt.name.toLowerCase().includes(hint.replace(/\s*room\s*/g, '').trim())) ||
+      roomTypes.find((rt) => hint && hint.includes(rt.name.toLowerCase()));
+
+    update({
+      ...(parsed.guestName ? { guestName: parsed.guestName } : {}),
+      ...(parsed.mobile ? { mobile: parsed.mobile } : {}),
+      ...(parsed.guestCity ? { guestCity: parsed.guestCity } : {}),
+      ...(parsed.checkinDate ? { checkinDate: parsed.checkinDate } : {}),
+      ...(parsed.checkoutDate ? { checkoutDate: parsed.checkoutDate } : {}),
+      ...(parsed.preferredArrivalTime ? { preferredArrivalTime: parsed.preferredArrivalTime } : {}),
+      ...(parsed.preferredDepartureTime ? { preferredDepartureTime: parsed.preferredDepartureTime } : {}),
+      paxMen: parsed.paxMen,
+      paxWomen: parsed.paxWomen,
+      paxChildren: parsed.paxChildren,
+      ...(parsed.santReferenceName ? { santReferenceName: parsed.santReferenceName } : {}),
+      ...(matchedRt ? { roomTypeId: matchedRt.id } : {}),
+    });
+    setWaParseNote('Auto-filled from WhatsApp message!');
+    setShowWaPaste(false);
+    setWaRawText('');
+  };
   const [idDocumentUrl, setIdDocumentUrl] = useState(null);
   const [uploadingId, setUploadingId] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -421,6 +455,41 @@ export function NewWalkInModal({ roomTypes, apiBaseUrl, token, initialRoom = nul
           <button type="button" onClick={onCancel} className="text-[#2B1610]/40 hover:text-[#2B1610]">
             <X className="w-5 h-5" />
           </button>
+        </div>
+
+        <div className="mb-3">
+          <button
+            type="button"
+            onClick={() => setShowWaPaste((p) => !p)}
+            className="text-xs text-[#4A6D5C] hover:underline flex items-center gap-1.5"
+          >
+            <MessageCircle className="w-3.5 h-3.5" />
+            {showWaPaste ? 'Hide WhatsApp paste box' : 'Paste WhatsApp Booking Message (Auto-Fill)'}
+          </button>
+          {waParseNote && !showWaPaste && (
+            <p className="text-xs text-[#4A6D5C] mt-1">{waParseNote}</p>
+          )}
+          {showWaPaste && (
+            <div className="mt-2 border border-[#4A6D5C]/30 bg-[#4A6D5C]/5 p-3 space-y-2">
+              <textarea
+                rows={5}
+                value={waRawText}
+                onChange={(e) => setWaRawText(e.target.value)}
+                placeholder="Paste the forwarded WhatsApp booking template here…"
+                className="w-full border border-[#2B1610]/20 bg-white p-2 text-xs"
+              />
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleParseWa}
+                  className="bg-[#4A6D5C] text-white px-3 py-1.5 text-xs hover:opacity-90"
+                >
+                  Auto-Fill Form
+                </button>
+                {waParseNote && <span className="text-xs text-[#8C3B3B]">{waParseNote}</span>}
+              </div>
+            </div>
+          )}
         </div>
 
         {error && (

@@ -17,6 +17,7 @@ const { requirePermission } = require('../middleware/requirePermission');
 const { asyncHandler } = require('../utils/asyncHandler');
 const { getDiningData } = require('../utils/bhojanData');
 const { sendBhojanReport, buildWhatsAppUrl } = require('../mailer/bhojanReport');
+const { sendBhojanToTelegram } = require('../services/telegramBot');
 
 const pool = require('../db');
 const router = express.Router();
@@ -48,6 +49,11 @@ router.get('/today', requireAuth, asyncHandler(async (req, res) => {
 // Gated on check-in/out so the same people who manage arrivals can notify.
 router.post('/send', requireAuth, requirePermission('can_checkin_checkout'), asyncHandler(async (req, res) => {
   const result = await sendBhojanReport(pool, { reason: 'manual' });
+  res.json(result);
+}));
+
+router.post('/send-telegram', requireAuth, requirePermission('can_checkin_checkout'), asyncHandler(async (req, res) => {
+  const result = await sendBhojanToTelegram();
   res.json(result);
 }));
 

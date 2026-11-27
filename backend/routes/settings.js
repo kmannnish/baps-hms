@@ -58,6 +58,10 @@ const PRIVATE_SETTING_KEYS = new Set([
   'bhojanshala_email',
   'bhojanshala_mobile',
   'bhojan_report_last_sent',
+  'telegram_swami_chat_ids',
+  'telegram_bhojan_chat_ids',
+  'telegram_daily_last_sent',
+  'telegram_bhojan_last_sent',
   // Backup scheduler bookkeeping — set by the server after each run, read only
   // by the Backup tab (via GET /backup). Not useful or wanted on the public blob.
   'backup_daily_last_run',
@@ -121,6 +125,13 @@ const EDITABLE_KEYS = new Set([
   'reception_approve_on_behalf',
   // Admin-controlled booking form field rules (required / optional / hidden).
   'booking_form_config',
+  // Telegram bot chat IDs & scheduled report settings.
+  'telegram_swami_chat_ids',
+  'telegram_bhojan_chat_ids',
+  'telegram_daily_report_enabled',
+  'telegram_daily_report_time',
+  'telegram_bhojan_report_enabled',
+  'telegram_bhojan_report_time',
 ]);
 
 router.put('/', requireAuth, requirePermission('can_manage_settings'), asyncHandler(async (req, res) => {

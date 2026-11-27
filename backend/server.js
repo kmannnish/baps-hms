@@ -62,6 +62,8 @@ const idUploadsRoutes = require('./routes/idUploads');
 const reportsRoutes = require('./routes/reports');
 const bhojanRoutes = require('./routes/bhojan');
 const backupRoutes = require('./routes/backup');
+const telegramRoutes = require('./routes/telegram');
+const { registerWebhook, runTelegramSchedulersIfDue } = require('./services/telegramBot');
 const { errorHandler } = require('./middleware/errorHandler');
 const syncWorker = require('./sync/worker');
 const { runDailyReportIfDue } = require('./mailer/dailyReport');
@@ -157,6 +159,7 @@ app.use('/auth', authLimiter, authRoutes);
 app.use('/bookings', publicWriteLimiter, bookingsRoutes(io));
 app.use('/inventory', inventoryRoutes(io));
 app.use('/settings', settingsRoutes);
+app.use('/telegram', telegramRoutes(io));
 
 if (!CLOUD_MODE) {
   app.use('/rooms', roomsRoutes(io));
@@ -301,7 +304,15 @@ async function sendMorningSummary(socket) {
 const PORT = process.env.PORT || 4000;
 // Explicitly bind to 0.0.0.0 so other devices on the same WiFi network can
 // reach this server, not just the Reception PC itself.
-server.listen(PORT, '0.0.0.0', () => console.log(`BAPS HMS backend listening on :${PORT}`));
+server.listen(PORT, '0.0.0.0', () => {
+  console.log(`BAPS HMS backend listening on :${PORT}`);
+  registerWebhook().catch((err) => console.error('Telegram webhook registration failed:', err.message));
+});
+
+// Telegram scheduled reports (Swami Ji Daily Report + Bhojanshala Daily Count)
+setInterval(() => {
+  runTelegramSchedulersIfDue().catch((err) => console.error('Telegram scheduler tick failed:', err.message));
+}, 60 * 1000);
 
 // Start the hybrid sync worker. It self-gates: a no-op in CLOUD_MODE and when
 // CLOUD_DATABASE_URL is unset (LAN-only), so this line is safe in every

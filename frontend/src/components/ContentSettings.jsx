@@ -52,6 +52,16 @@ export default function ContentSettings({ apiBaseUrl, token }) {
   // behalf (recording his phone/WhatsApp decision) with a mandatory note.
   const [receptionApproveOnBehalf, setReceptionApproveOnBehalf] = useState(false);
 
+  // Telegram Bot settings (Swami Ji + Bhojanshala)
+  const [telegram, setTelegram] = useState({
+    swamiChatIds: '',
+    bhojanChatIds: '',
+    dailyEnabled: false,
+    dailyTime: '21:00',
+    bhojanEnabled: false,
+    bhojanTime: '07:00',
+  });
+
   const DEFAULT_FORM_CONFIG = {
     walkin: {
       guestCity: 'optional',
@@ -114,6 +124,14 @@ export default function ContentSettings({ apiBaseUrl, token }) {
         report_time: s.bhojan_report_time ?? '06:30',
       });
       setReceptionApproveOnBehalf(s.reception_approve_on_behalf === true);
+      setTelegram({
+        swamiChatIds: s.telegram_swami_chat_ids ?? '',
+        bhojanChatIds: s.telegram_bhojan_chat_ids ?? '',
+        dailyEnabled: s.telegram_daily_report_enabled === true,
+        dailyTime: s.telegram_daily_report_time ?? '21:00',
+        bhojanEnabled: s.telegram_bhojan_report_enabled === true,
+        bhojanTime: s.telegram_bhojan_report_time ?? '07:00',
+      });
       if (s.booking_form_config && typeof s.booking_form_config === 'object') {
         setFormConfig({
           walkin: { ...DEFAULT_FORM_CONFIG.walkin, ...(s.booking_form_config.walkin || {}) },
@@ -159,6 +177,12 @@ export default function ContentSettings({ apiBaseUrl, token }) {
           bhojan_report_time: bhojan.report_time,
           reception_approve_on_behalf: receptionApproveOnBehalf,
           booking_form_config: formConfig,
+          telegram_swami_chat_ids: telegram.swamiChatIds,
+          telegram_bhojan_chat_ids: telegram.bhojanChatIds,
+          telegram_daily_report_enabled: telegram.dailyEnabled,
+          telegram_daily_report_time: telegram.dailyTime,
+          telegram_bhojan_report_enabled: telegram.bhojanEnabled,
+          telegram_bhojan_report_time: telegram.bhojanTime,
         }),
       });
       setSaved(true);
@@ -651,6 +675,77 @@ export default function ContentSettings({ apiBaseUrl, token }) {
               ))}
             </div>
           ))}
+        </div>
+      </div>
+
+      <div className="border-t border-[#2B1610]/10 pt-6">
+        <h3 className="font-serif text-lg text-[#2B1610] mb-1 flex items-center gap-2">
+          <Send className="w-4 h-4 text-[#B8792F]" /> Telegram Bot (Swami Ji &amp; Bhojanshala)
+        </h3>
+        <p className="text-xs text-[#2B1610]/50 mb-4">
+          Have Swami Ji or the Bhojanshala person send <code>/start</code> to your Telegram bot to get their Chat ID, then paste it below (comma-separated for multiple).
+        </p>
+        <div className="grid sm:grid-cols-2 gap-4 mb-4">
+          <div>
+            <label className="text-xs uppercase tracking-wide text-[#2B1610]/50 block mb-1.5">Swami Ji Telegram Chat ID(s)</label>
+            <input
+              value={telegram.swamiChatIds}
+              onChange={(e) => setTelegram((p) => ({ ...p, swamiChatIds: e.target.value }))}
+              placeholder="e.g. 987654321"
+              className="w-full border border-[#2B1610]/20 bg-white px-3 py-2 text-sm"
+            />
+          </div>
+          <div>
+            <label className="text-xs uppercase tracking-wide text-[#2B1610]/50 block mb-1.5">Bhojanshala Telegram Chat ID(s)</label>
+            <input
+              value={telegram.bhojanChatIds}
+              onChange={(e) => setTelegram((p) => ({ ...p, bhojanChatIds: e.target.value }))}
+              placeholder="e.g. 123456789"
+              className="w-full border border-[#2B1610]/20 bg-white px-3 py-2 text-sm"
+            />
+          </div>
+        </div>
+        <div className="grid sm:grid-cols-2 gap-4">
+          <div className="border border-[#2B1610]/10 p-3 bg-white/40 space-y-2">
+            <label className="flex items-center gap-2 text-sm text-[#2B1610] cursor-pointer">
+              <input
+                type="checkbox"
+                checked={telegram.dailyEnabled}
+                onChange={(e) => setTelegram((p) => ({ ...p, dailyEnabled: e.target.checked }))}
+                className="accent-[#B8792F]"
+              />
+              Daily Operations Report to Swami Ji
+            </label>
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-[#2B1610]/50">Time (IST):</span>
+              <input
+                type="time"
+                value={telegram.dailyTime}
+                onChange={(e) => setTelegram((p) => ({ ...p, dailyTime: e.target.value }))}
+                className="border border-[#2B1610]/20 bg-white px-2.5 py-1 text-sm"
+              />
+            </div>
+          </div>
+          <div className="border border-[#2B1610]/10 p-3 bg-white/40 space-y-2">
+            <label className="flex items-center gap-2 text-sm text-[#2B1610] cursor-pointer">
+              <input
+                type="checkbox"
+                checked={telegram.bhojanEnabled}
+                onChange={(e) => setTelegram((p) => ({ ...p, bhojanEnabled: e.target.checked }))}
+                className="accent-[#B8792F]"
+              />
+              Daily Meal Count to Bhojanshala
+            </label>
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-[#2B1610]/50">Time (IST):</span>
+              <input
+                type="time"
+                value={telegram.bhojanTime}
+                onChange={(e) => setTelegram((p) => ({ ...p, bhojanTime: e.target.value }))}
+                className="border border-[#2B1610]/20 bg-white px-2.5 py-1 text-sm"
+              />
+            </div>
+          </div>
         </div>
       </div>
 

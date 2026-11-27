@@ -83,7 +83,8 @@ export default function SwamiPortal() {
       .replace('{{name}}', booking.guestName)
       .replace('{{status}}', statusKey)
       .replace('{{room}}', booking.roomTypeName || 'your room');
-    const phone = (booking.mobile || '').replace(/\D/g, '');
+    const rawPhone = (booking.mobile || '').replace(/\D/g, '');
+    const phone = rawPhone.length === 10 ? `91${rawPhone}` : rawPhone;
     return `https://wa.me/${phone}?text=${encodeURIComponent(message)}`;
   };
 

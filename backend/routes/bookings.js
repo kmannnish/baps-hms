@@ -271,6 +271,10 @@ module.exports = function (io) {
 
     const booking = rows[0];
     io.to('role:swami').to('role:admin').emit('booking:new', booking);
+    try {
+      const { notifyNewBookingRequest } = require('../services/telegramBot');
+      notifyNewBookingRequest(booking.id).catch((err) => console.error('Telegram notify failed:', err.message));
+    } catch { /* non-fatal */ }
     res.status(201).json(booking);
   }));
 
