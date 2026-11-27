@@ -124,7 +124,7 @@ export default function CustomerBookingForm({ roomTypes = [], onSubmit, apiBaseU
 
   if (submitted) {
     return (
-      <div className="max-w-md mx-auto bg-[#F8F4EC] border border-[#2B1610]/10 p-8 text-center">
+      <div className="max-w-md mx-auto bg-[#F8F4EC]/95 backdrop-blur-md border border-[#E3B368]/30 rounded-2xl shadow-[0_24px_80px_rgba(0,0,0,0.45)] p-8 text-center">
         <CheckCircle2 className="w-10 h-10 text-[#4A6D5C] mx-auto mb-4" strokeWidth={1.5} />
         <h3 className="font-serif text-xl text-[#2B1610] mb-2">Request received</h3>
         <p className="text-sm text-[#2B1610]/60">
@@ -135,7 +135,7 @@ export default function CustomerBookingForm({ roomTypes = [], onSubmit, apiBaseU
   }
 
   return (
-    <form onSubmit={handleSubmitClick} className="max-w-2xl mx-auto bg-[#F8F4EC] border border-[#2B1610]/10 p-6 sm:p-8 space-y-6">
+    <form onSubmit={handleSubmitClick} className="max-w-2xl mx-auto bg-[#F8F4EC]/95 backdrop-blur-md border border-[#E3B368]/30 border-t-4 border-t-[#B8792F] rounded-2xl shadow-[0_24px_80px_rgba(0,0,0,0.45)] p-6 sm:p-8 space-y-6">
       <div>
         <h2 className="font-serif text-2xl text-[#2B1610] mb-1">Request a stay</h2>
         <p className="text-sm text-[#2B1610]/50">BAPS Shri Swaminarayan Mandir, Jaipur — Utara</p>

@@ -8,3 +8,51 @@ body {
   margin: 0;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 }
+
+@keyframes floatOrbSlow {
+  0%, 100% { transform: translate3d(0, 0, 0) scale(1); }
+  33% { transform: translate3d(32px, -24px, 0) scale(1.08); }
+  66% { transform: translate3d(-24px, 18px, 0) scale(0.95); }
+}
+
+@keyframes floatOrbReverse {
+  0%, 100% { transform: translate3d(0, 0, 0) scale(1); }
+  50% { transform: translate3d(-36px, -28px, 0) scale(1.1); }
+}
+
+@keyframes shimmerGold {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+@keyframes fadeSlideUp {
+  from { opacity: 0; transform: translateY(18px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes mandirFloat {
+  0%, 100% { transform: translateY(0px); }
+  50% { transform: translateY(-6px); }
+}
+
+.animate-orb-slow {
+  animation: floatOrbSlow 16s ease-in-out infinite;
+}
+
+.animate-orb-reverse {
+  animation: floatOrbReverse 20s ease-in-out infinite;
+}
+
+.animate-shimmer-gold {
+  background-size: 220% 220%;
+  animation: shimmerGold 9s ease-in-out infinite;
+}
+
+.animate-fade-up {
+  animation: fadeSlideUp 0.7s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.animate-mandir-float {
+  animation: mandirFloat 7s ease-in-out infinite;
+}

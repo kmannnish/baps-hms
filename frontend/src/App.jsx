@@ -1,5 +1,5 @@
 import React from 'react';
-import { BrowserRouter, Routes, Route, Navigate, useNavigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import { io } from 'socket.io-client';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import ProtectedRoute from './components/ProtectedRoute';
@@ -68,41 +68,54 @@ export default function App() {
   return (
     <AuthProvider apiBaseUrl={API_BASE_URL} socketUrl={SOCKET_URL} io={io}>
       <BrowserRouter>
-        <OfflineBanner />
-        <Routes>
-          <Route path="/" element={<CustomerPortal apiBaseUrl={API_BASE_URL} />} />
-          <Route path="/upload-id/:sessionId" element={<MobileIdCapture apiBaseUrl={API_BASE_URL} />} />
+        <AppShell />
+      </BrowserRouter>
+    </AuthProvider>
+  );
+}
 
-          <Route path="/login" element={<LoginRoute />} />
+function AppShell() {
+  const { pathname } = useLocation();
+  const isPublicGuestPage = pathname === '/' || pathname.startsWith('/upload-id/');
 
-          <Route
-            path="/reception"
-            element={
-              <ProtectedRoute allowedRoles={['Receptionist']}>
-                <ReceptionPortal />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/swami"
-            element={
-              <ProtectedRoute allowedRoles={['Swami Ji']}>
-                <SwamiPortal />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/admin"
-            element={
-              <ProtectedRoute allowedRoles={['Admin']}>
-                <AdminPortal />
-              </ProtectedRoute>
-            }
-          />
+  return (
+    <>
+      <OfflineBanner />
+      <Routes>
+        <Route path="/" element={<CustomerPortal apiBaseUrl={API_BASE_URL} />} />
+        <Route path="/upload-id/:sessionId" element={<MobileIdCapture apiBaseUrl={API_BASE_URL} />} />
 
-          <Route path="/unauthorized" element={<UnauthorizedScreen />} />
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
+        <Route path="/login" element={<LoginRoute />} />
+
+        <Route
+          path="/reception"
+          element={
+            <ProtectedRoute allowedRoles={['Receptionist']}>
+              <ReceptionPortal />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/swami"
+          element={
+            <ProtectedRoute allowedRoles={['Swami Ji']}>
+              <SwamiPortal />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/admin"
+          element={
+            <ProtectedRoute allowedRoles={['Admin']}>
+              <AdminPortal />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route path="/unauthorized" element={<UnauthorizedScreen />} />
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
+      {!isPublicGuestPage && (
         <footer className="border-t border-[#2B1610]/10 bg-[#F8F4EC] px-6 py-4 text-center text-xs text-[#2B1610]/60">
           <span>For help &amp; support: </span>
           <a
@@ -118,8 +131,8 @@ export default function App() {
           <span> · </span>
           <a href="mailto:mannnishkumawat@gmail.com" className="hover:underline text-[#B8792F]">mannnishkumawat@gmail.com</a>
         </footer>
-      </BrowserRouter>
-    </AuthProvider>
+      )}
+    </>
   );
 }
 
