@@ -1465,6 +1465,58 @@ module.exports = function (io) {
   // Admin, and — since migration 004 — the Reception desk). Registered last so
   // the fixed-segment PATCH routes above are matched first.
   // ------------------------------------------------------------------------
+  // POST /bookings/:id/undo-approval — revert an approved/modified/rejected
+  // booking back to 'pending' so Swami Ji or Reception can re-decide.
+  router.post('/:id/undo-approval', requireAuth, requirePermission('can_approve_bookings'), asyncHandler(async (req, res) => {
+    const { id } = req.params;
+    const { rows: curRows } = await pool.query(`SELECT * FROM bookings WHERE id = $1`, [id]);
+    const b = curRows[0];
+    if (!b) return res.status(404).json({ error: 'BOOKING_NOT_FOUND' });
+    if (!['approved', 'modified', 'rejected'].includes(b.status)) {
+      return res.status(409).json({
+        error: 'CANNOT_UNDO_APPROVAL',
+        message: 'Only approved, modified, or rejected bookings (not yet checked in) can be reverted to pending.',
+      });
+    }
+    if (b.channel === 'online') {
+      const authoritative = await userHasPermission(req.user.id, 'can_approve_online_bookings');
+      if (!authoritative) {
+        const { rows: toggleRows } = await pool.query(
+          `SELECT value FROM settings WHERE key = 'reception_approve_on_behalf'`
+        );
+        if (!truthy(toggleRows[0]?.value)) {
+          return res.status(403).json({
+            error: 'FORBIDDEN',
+            message: 'Missing permission to undo an online booking decision.',
+          });
+        }
+      }
+    }
+
+    const { rows: updated } = await pool.query(
+      `UPDATE bookings
+       SET status = 'pending',
+           billing_tier = NULL,
+           discount_percent = 0,
+           final_amount = NULL,
+           approved_by = NULL,
+           approved_at = NULL,
+           approval_note = NULL,
+           updated_at = now()
+       WHERE id = $1
+       RETURNING *`,
+      [id]
+    );
+
+    await pool.query(
+      `INSERT INTO audit_logs (actor_user_id, action, entity_type, entity_id, details)
+       VALUES ($1, 'booking_approval_undone', 'booking', $2, $3)`,
+      [req.user.id, id, JSON.stringify({ previousStatus: b.status })]
+    );
+    io.emit('booking:updated', updated[0]);
+    res.json(updated[0]);
+  }));
+
   router.patch('/:id', requireAuth, requirePermission('can_modify_bookings'), asyncHandler(async (req, res) => {
     const { id } = req.params;
     const { rows: curRows } = await pool.query(`SELECT * FROM bookings WHERE id = $1`, [id]);

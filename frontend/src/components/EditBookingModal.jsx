@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, Loader2, IndianRupee, Save } from 'lucide-react';
+import { X, Loader2, IndianRupee, Save, RotateCcw } from 'lucide-react';
 import { fetchArray } from '../lib/api';
 import { toDateInput } from '../lib/datetime';
 
@@ -54,6 +54,7 @@ export default function EditBookingModal({
 }) {
   const [roomTypes, setRoomTypes] = useState([]);
   const [saving, setSaving] = useState(false);
+  const [confirmUndo, setConfirmUndo] = useState(false);
   const [error, setError] = useState(null);   // friendly message of the step that failed
   const [savedSteps, setSavedSteps] = useState([]); // human labels of steps already saved this attempt
 
@@ -221,6 +222,30 @@ export default function EditBookingModal({
     }
   };
 
+  const canUndoDecision = ['approved', 'modified', 'rejected'].includes(b.status) && (canModify || canSetBilling);
+
+  const undoDecision = async () => {
+    setError(null);
+    setSaving(true);
+    try {
+      const res = await fetch(`${apiBaseUrl}/bookings/${b.id}/undo-approval`, {
+        method: 'POST',
+        headers: authHeaders,
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setError(body.message || body.error || 'Could not undo decision.');
+        setConfirmUndo(false);
+        return;
+      }
+      onSaved?.(body);
+    } catch {
+      setError('Network error — could not reach the server.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
   return (
     <div className="fixed inset-0 bg-[#2B1610]/60 flex items-center justify-center p-4 z-50">
       <div className="bg-[#F8F4EC] max-w-lg w-full p-6 relative max-h-[90vh] overflow-y-auto">
@@ -354,6 +379,46 @@ export default function EditBookingModal({
               <p className="text-xs text-[#2B1610]/50 mt-1">
                 Already saved: {savedSteps.join(', ')}. Fix the above and save again.
               </p>
+            )}
+          </div>
+        )}
+
+        {canUndoDecision && (
+          <div className="mb-5 border border-[#C77A34]/30 bg-[#C77A34]/5 p-3 flex items-center justify-between gap-3 flex-wrap">
+            <div>
+              <p className="text-xs font-medium text-[#2B1610]">Revert to Pending</p>
+              <p className="text-[11px] text-[#2B1610]/55">
+                Undo this {b.status} decision and move the booking back to Awaiting approval.
+              </p>
+            </div>
+            {!confirmUndo ? (
+              <button
+                type="button"
+                onClick={() => setConfirmUndo(true)}
+                disabled={saving}
+                className="flex items-center gap-1.5 border border-[#C77A34]/50 text-[#8C3B3B] px-3 py-1.5 text-xs hover:bg-[#C77A34]/10 shrink-0"
+              >
+                <RotateCcw className="w-3.5 h-3.5" /> Undo decision
+              </button>
+            ) : (
+              <div className="flex items-center gap-1.5 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setConfirmUndo(false)}
+                  disabled={saving}
+                  className="border border-[#2B1610]/20 text-[#2B1610]/60 px-2.5 py-1.5 text-xs"
+                >
+                  Keep
+                </button>
+                <button
+                  type="button"
+                  onClick={undoDecision}
+                  disabled={saving}
+                  className="bg-[#8C3B3B] text-white px-3 py-1.5 text-xs hover:opacity-90"
+                >
+                  Yes, revert to Pending
+                </button>
+              </div>
             )}
           </div>
         )}
