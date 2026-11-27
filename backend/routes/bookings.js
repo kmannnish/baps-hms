@@ -1509,7 +1509,7 @@ module.exports = function (io) {
     );
 
     await pool.query(
-      `INSERT INTO audit_logs (actor_user_id, action, entity_type, entity_id, details)
+      `INSERT INTO audit_log (actor_id, action, entity_type, entity_id, metadata)
        VALUES ($1, 'booking_approval_undone', 'booking', $2, $3)`,
       [req.user.id, id, JSON.stringify({ previousStatus: b.status })]
     );
