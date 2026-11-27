@@ -64,7 +64,7 @@ export function parseWhatsAppBooking(text) {
   const checkoutDate = normalizeDate(getVal(/^(?:\d+\s*[\.\)]\s*)?(?:Departure|Check[\s-]*out)\s*Date\s*:?-+\s*(.+)$/i));
   const preferredDepartureTime = normalizeTime(getVal(/^(?:\d+\s*[\.\)]\s*)?(?:Departure|Check[\s-]*out)\s*Time\s*:?-+\s*(.+)$/i));
 
-  const totalPerson = extractNumber(getVal(/^(?:\d+\s*[\.\)]\s*)?Total\s*Person\s*:?-+\s*(.+)$/i));
+  const totalPerson = extractNumber(getVal(/^(?:\d+\s*[\.\)]\s*)?Total\s*Persons?\s*:?-+\s*(.+)$/i));
   let paxMen = extractNumber(getVal(/^(?:Gents|Male|Men)\s*:?-+\s*(.+)$/i));
   const paxWomen = extractNumber(getVal(/^(?:Ladies|Female|Women)\s*:?-+\s*(.+)$/i));
   const paxChildren = extractNumber(getVal(/^(?:Children|Kids)\s*:?-+\s*(.+)$/i));

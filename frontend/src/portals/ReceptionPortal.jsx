@@ -3,7 +3,7 @@ import { LogOut, X, DoorOpen, ClipboardList, LogIn as CheckInIcon, IndianRupee, 
 import { useAuth } from '../context/AuthContext';
 import FloorBoard from '../components/FloorBoard';
 import DashboardStatsStrip from '../components/DashboardStatsStrip';
-import WalkInBookingPanel, { NewWalkInModal } from '../components/WalkInBookingPanel';
+import WalkInBookingPanel, { NewWalkInModal, DecisionModal } from '../components/WalkInBookingPanel';
 import CurrentGuestsList from '../components/CurrentGuestsList';
 import BhojanPanel from '../components/BhojanPanel';
 import OccupancyCalendar from '../components/OccupancyCalendar';
@@ -41,6 +41,7 @@ export default function ReceptionPortal() {
   const [checkinBooking, setCheckinBooking] = useState(null);
   const [editingBooking, setEditingBooking] = useState(null);
   const [viewingBookingId, setViewingBookingId] = useState(null);
+  const [decidingBooking, setDecidingBooking] = useState(null);
   const [cancelBooking, setCancelBooking] = useState(null); // booking pending cancellation (no-show / guest cancel)
   const [dashStats, setDashStats] = useState(null);
   const [luggage, setLuggage] = useState({ count: 0, tokens: [] });
@@ -520,23 +521,30 @@ export default function ReceptionPortal() {
                   <p className="text-sm text-[#2B1610]/40">Nothing waiting for approval.</p>
                 ) : (
                   <div className="space-y-3">
-                    {pendingApproval.map((b) => (
-                      <CheckinListRow
-                        key={b.id}
-                        booking={b}
-                        badge={
-                          <>
-                            <span className="text-[10px] uppercase tracking-wide bg-[#B8792F]/15 text-[#B8792F] px-1.5 py-0.5">
-                              {b.status === 'modified' ? 'Modified' : 'Pending'}
-                            </span>
-                            <span className="text-[10px] uppercase tracking-wide bg-[#2B1610]/5 text-[#2B1610]/50 px-1.5 py-0.5">
-                              {b.channel === 'walkin' ? 'Walk-in' : 'Online'}
-                            </span>
-                          </>
-                        }
-                        onViewId={() => setViewingBookingId(b.id)}
-                      />
-                    ))}
+                    {pendingApproval.map((b) => {
+                      const perms = user?.permissions || [];
+                      const canDecide = b.channel === 'walkin'
+                        ? perms.includes('can_approve_bookings')
+                        : (perms.includes('can_approve_bookings') && perms.includes('can_approve_online_bookings'));
+                      return (
+                        <CheckinListRow
+                          key={b.id}
+                          booking={b}
+                          badge={
+                            <>
+                              <span className="text-[10px] uppercase tracking-wide bg-[#B8792F]/15 text-[#B8792F] px-1.5 py-0.5">
+                                {b.status === 'modified' ? 'Modified' : 'Pending'}
+                              </span>
+                              <span className="text-[10px] uppercase tracking-wide bg-[#2B1610]/5 text-[#2B1610]/50 px-1.5 py-0.5">
+                                {b.channel === 'walkin' ? 'Walk-in' : 'Online'}
+                              </span>
+                            </>
+                          }
+                          onViewId={() => setViewingBookingId(b.id)}
+                          onDecide={canDecide ? () => setDecidingBooking(b) : null}
+                        />
+                      );
+                    })}
                     <p className="text-xs text-[#2B1610]/40 pt-1">
                       Record a walk-in's phone/WhatsApp decision in the{' '}
                       <button onClick={() => setTab('walkins')} className="text-[#B8792F] hover:underline">Booking</button>{' '}
@@ -756,6 +764,35 @@ export default function ReceptionPortal() {
           }}
         />
       )}
+
+      {decidingBooking && (
+        <DecisionModal
+          booking={decidingBooking}
+          roomTypes={roomTypes}
+          apiBaseUrl={apiBaseUrl}
+          token={token}
+          onCancel={() => setDecidingBooking(null)}
+          onDecide={async (bookingId, decision) => {
+            await fetch(`${apiBaseUrl}/bookings/${bookingId}/decide`, {
+              method: 'POST',
+              headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+              body: JSON.stringify(decision),
+            });
+            setDecidingBooking(null);
+            loadPendingApproval();
+            loadAwaitingCheckin();
+            loadUpcoming();
+            loadBoard();
+          }}
+          onCheckedIn={() => {
+            setDecidingBooking(null);
+            loadPendingApproval();
+            loadAwaitingCheckin();
+            loadUpcoming();
+            loadBoard();
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -763,7 +800,7 @@ export default function ReceptionPortal() {
 // A single booking row for the Check-ins tab sections. Actions are opt-in so one
 // row serves "awaiting approval" (view only), "awaiting check-in" (assign room +
 // confirm) and "upcoming" (view + confirm). `badge` is optional status markup.
-function CheckinListRow({ booking: b, badge = null, onViewId, confirmationLink, onCheckin, onEdit, onCancel }) {
+function CheckinListRow({ booking: b, badge = null, onViewId, onDecide, confirmationLink, onCheckin, onEdit, onCancel }) {
   return (
     <div className="border border-[#2B1610]/10 bg-white/40 p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
       <div>
@@ -790,6 +827,14 @@ function CheckinListRow({ booking: b, badge = null, onViewId, confirmationLink, 
             className="flex items-center gap-1.5 border border-[#2B1610]/20 text-[#2B1610]/80 px-3 py-2 text-sm hover:border-[#2B1610]/40"
           >
             <Eye className="w-3.5 h-3.5" /> View ID
+          </button>
+        )}
+        {onDecide && (
+          <button
+            onClick={onDecide}
+            className="flex items-center gap-1.5 bg-[#4A6D5C] text-white px-3 py-2 text-sm hover:opacity-90"
+          >
+            <CheckCircle2 className="w-3.5 h-3.5" /> Approve / Reject
           </button>
         )}
         {onEdit && (

@@ -978,7 +978,7 @@ export function NewWalkInModal({ roomTypes, apiBaseUrl, token, initialRoom = nul
   );
 }
 
-function DecisionModal({ booking, roomTypes, apiBaseUrl, token, onCancel, onDecide, onCheckedIn }) {
+export function DecisionModal({ booking, roomTypes, apiBaseUrl, token, onCancel, onDecide, onCheckedIn }) {
   const [billingTier, setBillingTier] = useState('paid');
   const [discountPercent, setDiscountPercent] = useState(0);
   const [approvalNote, setApprovalNote] = useState('');

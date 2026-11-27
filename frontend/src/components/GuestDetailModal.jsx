@@ -178,20 +178,22 @@ export default function GuestDetailModal({ bookingId, apiBaseUrl, token, onClose
               )}
             </div>
 
-            <div className="flex gap-2">
-              <button
-                onClick={() => printReceipt(booking, { apiBaseUrl, token })}
-                className="flex-1 flex items-center justify-center gap-1.5 border border-[#2B1610]/20 text-[#2B1610] py-2.5 text-sm hover:bg-[#2B1610]/5"
-              >
-                <Printer className="w-3.5 h-3.5" /> Print receipt
-              </button>
-              <button
-                onClick={() => openWhatsAppReceipt(booking)}
-                className="flex-1 flex items-center justify-center gap-1.5 border border-[#4A6D5C]/30 text-[#4A6D5C] py-2.5 text-sm hover:bg-[#4A6D5C]/5"
-              >
-                <MessageCircle className="w-3.5 h-3.5" /> WhatsApp
-              </button>
-            </div>
+            {!['pending', 'rejected', 'cancelled'].includes(booking.status) && (
+              <div className="flex gap-2">
+                <button
+                  onClick={() => printReceipt(booking, { apiBaseUrl, token })}
+                  className="flex-1 flex items-center justify-center gap-1.5 border border-[#2B1610]/20 text-[#2B1610] py-2.5 text-sm hover:bg-[#2B1610]/5"
+                >
+                  <Printer className="w-3.5 h-3.5" /> Print receipt
+                </button>
+                <button
+                  onClick={() => openWhatsAppReceipt(booking)}
+                  className="flex-1 flex items-center justify-center gap-1.5 border border-[#4A6D5C]/30 text-[#4A6D5C] py-2.5 text-sm hover:bg-[#4A6D5C]/5"
+                >
+                  <MessageCircle className="w-3.5 h-3.5" /> WhatsApp
+                </button>
+              </div>
+            )}
           </>
         )}
       </div>
