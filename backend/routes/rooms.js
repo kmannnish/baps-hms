@@ -131,7 +131,34 @@ module.exports = function (io) {
   // Each token is a printable claim check (LG-0001, ...) handed to a guest at
   // checkout for the bags they leave in the luggage hall. "Bags in hall" is the
   // sum of bag_count over open tokens — there is no separate manual counter.
+  let luggageTableReady = false;
+  const ensureLuggageTable = async () => {
+    if (luggageTableReady) return;
+    await pool.query(`
+      CREATE SEQUENCE IF NOT EXISTS luggage_token_seq;
+      CREATE TABLE IF NOT EXISTS luggage_tokens (
+        id           UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+        token_code   VARCHAR(16) UNIQUE NOT NULL
+                       DEFAULT ('LG-' || lpad(nextval('luggage_token_seq')::text, 4, '0')),
+        booking_id   UUID REFERENCES bookings(id) ON DELETE SET NULL,
+        guest_name   VARCHAR(128) NOT NULL,
+        mobile       VARCHAR(20),
+        bag_count    INTEGER NOT NULL DEFAULT 1 CHECK (bag_count >= 1),
+        status       VARCHAR(16) NOT NULL DEFAULT 'open'
+                       CHECK (status IN ('open', 'collected')),
+        note         TEXT DEFAULT '',
+        issued_by    UUID REFERENCES users(id),
+        issued_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+        collected_by UUID REFERENCES users(id),
+        collected_at TIMESTAMPTZ
+      );
+      CREATE INDEX IF NOT EXISTS idx_luggage_tokens_status ON luggage_tokens (status);
+    `);
+    luggageTableReady = true;
+  };
+
   const emitLuggage = async () => {
+    await ensureLuggageTable();
     const { rows } = await pool.query(
       `SELECT COALESCE(SUM(bag_count), 0)::int AS count FROM luggage_tokens WHERE status = 'open'`
     );
@@ -140,6 +167,7 @@ module.exports = function (io) {
 
   // GET open tokens + total bag count for the luggage-hall view.
   router.get('/luggage', requireAuth, asyncHandler(async (req, res) => {
+    await ensureLuggageTable();
     const { rows } = await pool.query(
       `SELECT id, token_code, booking_id, guest_name, mobile, bag_count, note, issued_at
        FROM luggage_tokens
@@ -152,6 +180,7 @@ module.exports = function (io) {
 
   // Issue a luggage token for a guest (typically as they check out).
   router.post('/luggage/tokens', requireAuth, requirePermission('can_manage_luggage'), asyncHandler(async (req, res) => {
+    await ensureLuggageTable();
     const guestName = String(req.body.guestName || '').trim();
     if (!guestName) {
       return res.status(400).json({ error: 'GUEST_NAME_REQUIRED', message: 'Guest name is required to issue a luggage token.' });
