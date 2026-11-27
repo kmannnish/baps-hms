@@ -88,19 +88,19 @@ export default function SwamiPortal() {
   };
 
   return (
-    <div className="min-h-screen bg-[#F8F4EC]">
-      <header className="flex items-center justify-between px-6 py-4 border-b border-[#2B1610]/10">
-        <div>
-          <h1 className="font-serif text-xl text-[#2B1610]">Swami Ji</h1>
-          <p className="text-xs text-[#2B1610]/40">Signed in as {user?.name}</p>
+    <div className="min-h-screen bg-[#F8F4EC] overflow-x-hidden">
+      <header className="flex items-center justify-between px-4 sm:px-6 py-3.5 sm:py-4 border-b border-[#2B1610]/10 gap-2">
+        <div className="min-w-0">
+          <h1 className="font-serif text-lg sm:text-xl text-[#2B1610]">Swami Ji</h1>
+          <p className="text-xs text-[#2B1610]/40 truncate">Signed in as {user?.name}</p>
         </div>
-        <button onClick={logout} className="flex items-center gap-1.5 text-sm text-[#2B1610]/50 hover:text-[#2B1610]">
+        <button onClick={logout} className="flex items-center gap-1.5 text-sm text-[#2B1610]/50 hover:text-[#2B1610] shrink-0">
           <LogOut className="w-4 h-4" /> Sign out
         </button>
       </header>
 
-      <div className="px-6 pt-5">
-        <div className="flex gap-6 border-b border-[#2B1610]/15 mb-6">
+      <div className="px-4 sm:px-6 pt-4 sm:pt-5">
+        <div className="flex gap-5 sm:gap-6 border-b border-[#2B1610]/15 mb-5 sm:mb-6 overflow-x-auto no-scrollbar">
           <TabButton active={tab === 'queue'} onClick={() => setTab('queue')} icon={ClipboardCheck}>
             Pending Bookings
           </TabButton>
@@ -155,7 +155,7 @@ function TabButton({ active, onClick, icon: Icon, children }) {
   return (
     <button
       onClick={onClick}
-      className={`flex items-center gap-2 pb-3 text-sm border-b-2 -mb-px transition-colors ${
+      className={`flex items-center gap-2 pb-3 text-sm border-b-2 -mb-px transition-colors whitespace-nowrap shrink-0 ${
         active ? 'border-[#B8792F] text-[#2B1610]' : 'border-transparent text-[#2B1610]/40'
       }`}
     >

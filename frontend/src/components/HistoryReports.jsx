@@ -369,6 +369,7 @@ export default function HistoryReports({
           </div>
         )}
 
+        <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
             <tr className="text-left text-xs uppercase tracking-wide text-[#2B1610]/40 border-b border-[#2B1610]/10">
@@ -505,6 +506,7 @@ export default function HistoryReports({
             )}
           </tbody>
         </table>
+        </div>
       </div>
 
       {editing && (

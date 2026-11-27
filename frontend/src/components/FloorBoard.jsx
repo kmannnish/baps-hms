@@ -106,10 +106,10 @@ export default function FloorBoard({ floors = [], onSelectRoom }) {
       </div>
 
       {/* Floor tabs — "All floors" first for a one-screen overview, then each floor */}
-      <div className="flex gap-6 border-b border-[#2B1610]/15 mb-5 flex-wrap">
+      <div className="flex gap-5 sm:gap-6 border-b border-[#2B1610]/15 mb-5 overflow-x-auto no-scrollbar">
         <button
           onClick={() => setActiveFloorId('ALL')}
-          className={`pb-3 text-sm transition-colors border-b-2 -mb-px ${
+          className={`pb-3 text-sm transition-colors border-b-2 -mb-px whitespace-nowrap shrink-0 ${
             isAll
               ? 'border-[#B8792F] text-[#2B1610]'
               : 'border-transparent text-[#2B1610]/40 hover:text-[#2B1610]/70'
@@ -121,7 +121,7 @@ export default function FloorBoard({ floors = [], onSelectRoom }) {
           <button
             key={floor.id}
             onClick={() => setActiveFloorId(floor.id)}
-            className={`pb-3 text-sm transition-colors border-b-2 -mb-px ${
+            className={`pb-3 text-sm transition-colors border-b-2 -mb-px whitespace-nowrap shrink-0 ${
               !isAll && activeFloor?.id === floor.id
                 ? 'border-[#B8792F] text-[#2B1610]'
                 : 'border-transparent text-[#2B1610]/40 hover:text-[#2B1610]/70'

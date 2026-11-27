@@ -143,7 +143,8 @@ function RoomTypesPanel({ roomTypes, apiBaseUrl, authHeaders, onChanged }) {
 
   return (
     <div>
-      <table className="w-full text-sm mb-4">
+      <div className="overflow-x-auto mb-4">
+      <table className="w-full text-sm">
         <thead>
           <tr className="text-left text-xs uppercase tracking-wide text-[#2B1610]/40 border-b border-[#2B1610]/10">
             <th className="py-2 font-normal">Room type</th>
@@ -226,6 +227,7 @@ function RoomTypesPanel({ roomTypes, apiBaseUrl, authHeaders, onChanged }) {
           ))}
         </tbody>
       </table>
+      </div>
 
       {adding ? (
         <div className="flex flex-wrap items-center gap-2 border border-[#2B1610]/10 p-3">
@@ -574,6 +576,7 @@ function AddonsPanel({ addons, apiBaseUrl, authHeaders, onChanged }) {
         </button>
       </div>
 
+      <div className="overflow-x-auto">
       <table className="w-full text-sm">
         <thead>
           <tr className="text-left text-xs uppercase tracking-wide text-[#2B1610]/40 border-b border-[#2B1610]/10">
@@ -650,6 +653,7 @@ function AddonsPanel({ addons, apiBaseUrl, authHeaders, onChanged }) {
           ))}
         </tbody>
       </table>
+      </div>
     </div>
   );
 }
