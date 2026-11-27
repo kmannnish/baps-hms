@@ -381,18 +381,19 @@ export function NewWalkInModal({ roomTypes, apiBaseUrl, token, initialRoom = nul
     return () => { active = false; };
   }, [checkinNow, form.roomTypeId, form.numRooms, apiBaseUrl, token, initialRoom]);
 
-  const selectedRt = (roomTypes || []).find((rt) => rt.id === booking.room_type_id);
-  const nights = booking.checkin_date && booking.checkout_date
-    ? Math.max(1, Math.round((new Date(booking.checkout_date) - new Date(booking.checkin_date)) / 86400000))
+  const selectedRt = (roomTypes || []).find((rt) => rt.id === form.roomTypeId);
+  const nights = form.checkinDate && form.checkoutDate
+    ? Math.max(1, Math.round((new Date(form.checkoutDate) - new Date(form.checkinDate)) / 86400000))
     : 1;
-  const baseRoomTotal = (Number(selectedRt?.base_price) || 0) * needed * nights;
+  const baseRoomTotal = (Number(selectedRt?.base_price) || 0) * form.numRooms * nights;
   const afterDiscount = billingTier === 'foc'
     ? 0
     : billingTier === 'discount'
     ? baseRoomTotal * (1 - Math.min(100, Math.max(0, Number(discountPercent) || 0)) / 100)
     : baseRoomTotal;
   const withGst = taxCfg.enabled ? afterDiscount * (1 + taxCfg.gstPercent / 100) : afterDiscount;
-  const estimatedTotal = Math.round(withGst);
+  const addonsTotal = addons.reduce((sum, a) => sum + (Number(a.price) || 0) * (selectedAddons[a.id] || 0), 0);
+  const estimatedTotal = Math.round(withGst + addonsTotal);
 
   useEffect(() => {
     if (!payAmountEdited) {
