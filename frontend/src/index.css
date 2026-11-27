@@ -65,3 +65,20 @@ body {
 .animate-wave-infinite {
   animation: waveInfinite 24s linear infinite;
 }
+
+@keyframes flagFlutter {
+  0%, 100% { transform: translate3d(0, 0px, 0) scaleY(1); }
+  25% { transform: translate3d(0, -10px, 0) scaleY(1.06); }
+  50% { transform: translate3d(0, 4px, 0) scaleY(0.94); }
+  75% { transform: translate3d(0, -6px, 0) scaleY(1.04); }
+}
+
+.animate-flag-flutter {
+  transform-origin: center;
+  animation: flagFlutter 7s ease-in-out infinite;
+}
+
+.animate-flag-flutter-delayed {
+  transform-origin: center;
+  animation: flagFlutter 9s ease-in-out -3s infinite;
+}

@@ -72,7 +72,7 @@ export default function CustomerPortal({ apiBaseUrl }) {
           preserveAspectRatio="none"
           className="w-[200%] h-full animate-wave-infinite"
         >
-          <g fill="none" strokeLinecap="round">
+          <g fill="none" strokeLinecap="round" className="animate-flag-flutter">
             {[
               { dy: 0, color: '#D14343', width: 2.2, op: 1 },
               { dy: 14, color: '#F8F4EC', width: 1.5, op: 0.8 },
@@ -88,6 +88,8 @@ export default function CustomerPortal({ apiBaseUrl }) {
                 strokeOpacity={b.op}
               />
             ))}
+          </g>
+          <g fill="none" strokeLinecap="round" className="animate-flag-flutter-delayed">
             {[
               { dy: 0, color: '#D14343', width: 1.6, op: 0.65 },
               { dy: 12, color: '#F8F4EC', width: 1.2, op: 0.55 },
