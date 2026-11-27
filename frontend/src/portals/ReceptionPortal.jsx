@@ -30,7 +30,7 @@ import { fmtDate } from '../lib/datetime';
  * driven by the `viewingBookingId` state below.
  */
 export default function ReceptionPortal() {
-  const { user, logout, apiBaseUrl, token, socket } = useAuth();
+  const { user, logout, apiBaseUrl, token, socket, settings } = useAuth();
   const [tab, setTab] = useState('board');
   const [floors, setFloors] = useState([]);
   const [roomTypes, setRoomTypes] = useState([]);
@@ -408,9 +408,11 @@ export default function ReceptionPortal() {
     return `https://wa.me/${phone}?text=${encodeURIComponent(msg)}`;
   };
 
+  const screensaverMinutes = Number(settings?.screensaver_idle_minutes ?? 5);
+
   return (
     <div className="min-h-screen bg-[#F8F4EC] overflow-x-hidden">
-      <IdleScreensaver />
+      <IdleScreensaver timeoutMs={screensaverMinutes * 60 * 1000} />
       <header className="flex items-center justify-between px-4 sm:px-6 py-3.5 sm:py-4 border-b border-[#2B1610]/10 gap-2" onClick={armSound}>
         <div className="min-w-0">
           <h1 className="font-serif text-lg sm:text-xl text-[#2B1610]">Reception</h1>

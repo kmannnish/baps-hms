@@ -126,6 +126,8 @@ const EDITABLE_KEYS = new Set([
   'reception_approve_on_behalf',
   // Admin-controlled booking form field rules (required / optional / hidden).
   'booking_form_config',
+  // Reception idle screensaver timeout in minutes (0 = disabled).
+  'screensaver_idle_minutes',
   // Telegram bot chat IDs & scheduled report settings.
   'telegram_swami_chat_ids',
   'telegram_bhojan_chat_ids',

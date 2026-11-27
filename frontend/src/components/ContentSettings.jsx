@@ -73,6 +73,7 @@ export default function ContentSettings({ apiBaseUrl, token }) {
   // Feature toggle: let Reception approve/reject a pending booking on Swami Ji's
   // behalf (recording his phone/WhatsApp decision) with a mandatory note.
   const [receptionApproveOnBehalf, setReceptionApproveOnBehalf] = useState(false);
+  const [screensaverMinutes, setScreensaverMinutes] = useState(5);
 
   // Telegram Bot settings (Swami Ji + Bhojanshala)
   const [telegram, setTelegram] = useState({
@@ -147,6 +148,7 @@ export default function ContentSettings({ apiBaseUrl, token }) {
         report_time: s.bhojan_report_time ?? '06:30',
       });
       setReceptionApproveOnBehalf(s.reception_approve_on_behalf === true);
+      setScreensaverMinutes(Number(s.screensaver_idle_minutes ?? 5));
       setTelegram({
         swamiChatIds: s.telegram_swami_chat_ids ?? '',
         bhojanChatIds: s.telegram_bhojan_chat_ids ?? '',
@@ -200,6 +202,7 @@ export default function ContentSettings({ apiBaseUrl, token }) {
           bhojan_report_enabled: bhojan.report_enabled,
           bhojan_report_time: bhojan.report_time,
           reception_approve_on_behalf: receptionApproveOnBehalf,
+          screensaver_idle_minutes: Math.max(0, Number(screensaverMinutes) || 0),
           booking_form_config: formConfig,
           telegram_swami_chat_ids: telegram.swamiChatIds,
           telegram_bhojan_chat_ids: telegram.bhojanChatIds,
@@ -710,6 +713,26 @@ export default function ContentSettings({ apiBaseUrl, token }) {
               ))}
             </div>
           ))}
+        </div>
+      </div>
+
+      <div className="border-t border-[#2B1610]/10 pt-6">
+        <h3 className="font-serif text-lg text-[#2B1610] mb-1 flex items-center gap-2">
+          <Clock className="w-4 h-4 text-[#B8792F]" /> Reception Idle Screensaver
+        </h3>
+        <p className="text-xs text-[#2B1610]/50 mb-3">
+          Shows the animated Mandir screensaver in Reception after inactivity without losing typed data. Set to <b>0</b> to disable.
+        </p>
+        <div className="flex items-center gap-3">
+          <input
+            type="number"
+            min={0}
+            max={120}
+            value={screensaverMinutes}
+            onChange={(e) => setScreensaverMinutes(e.target.value)}
+            className="w-24 border border-[#2B1610]/20 bg-white px-3 py-2 text-sm"
+          />
+          <span className="text-sm text-[#2B1610]/70">minutes (default: 5)</span>
         </div>
       </div>
 

@@ -15,6 +15,10 @@ export default function IdleScreensaver({ timeoutMs = IDLE_MS }) {
   const timerRef = useRef(null);
 
   useEffect(() => {
+    if (!timeoutMs || timeoutMs <= 0) {
+      setSleeping(false);
+      return;
+    }
     const resetTimer = () => {
       setSleeping(false);
       if (timerRef.current) clearTimeout(timerRef.current);
