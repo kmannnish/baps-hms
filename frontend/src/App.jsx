@@ -9,6 +9,7 @@ import StaffLogin from './components/StaffLogin';
 import SwamiPortal from './portals/SwamiPortal';
 import AdminPortal from './portals/AdminPortal';
 import MobileIdCapture from './components/MobileIdCapture';
+import OfflineBanner from './components/OfflineBanner';
 
 /**
  * App
@@ -67,6 +68,7 @@ export default function App() {
   return (
     <AuthProvider apiBaseUrl={API_BASE_URL} socketUrl={SOCKET_URL} io={io}>
       <BrowserRouter>
+        <OfflineBanner />
         <Routes>
           <Route path="/" element={<CustomerPortal apiBaseUrl={API_BASE_URL} />} />
           <Route path="/upload-id/:sessionId" element={<MobileIdCapture apiBaseUrl={API_BASE_URL} />} />
@@ -103,7 +105,14 @@ export default function App() {
         </Routes>
         <footer className="border-t border-[#2B1610]/10 bg-[#F8F4EC] px-6 py-4 text-center text-xs text-[#2B1610]/60">
           <span>For help &amp; support: </span>
-          <span className="font-medium text-[#2B1610]">Manish Kumawat</span>
+          <a
+            href="https://mannnish-kappa.vercel.app/"
+            target="_blank"
+            rel="noreferrer"
+            className="font-medium text-[#2B1610] hover:text-[#B8792F] hover:underline"
+          >
+            Manish Kumawat
+          </a>
           <span> · </span>
           <a href="tel:9511565884" className="hover:underline text-[#B8792F]">9511565884</a>
           <span> · </span>
