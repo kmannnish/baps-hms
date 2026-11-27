@@ -1,20 +1,21 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { LogIn } from 'lucide-react';
+import { LogIn, CalendarPlus, X } from 'lucide-react';
 import CustomerBookingForm from '../components/CustomerBookingForm';
 import { fetchArray, fetchObject } from '../lib/api';
 
 /**
  * CustomerPortal
  *
- * Public stay-request page with animated abstract light backdrop, shimmering
- * Jaipur Mandir line-art hero, a subtle Staff Login button, and the Request
- * Stay form directly below.
+ * Clean, modern public landing page with animated abstract ambient orbs,
+ * luminous Jaipur Mandir line-art hero, a subtle Staff Login button, and a
+ * centered "Request a Stay" CTA that opens the booking form in a modal.
  */
 export default function CustomerPortal({ apiBaseUrl }) {
   const [roomTypes, setRoomTypes] = useState([]);
   const [termsText, setTermsText] = useState('');
   const [formConfig, setFormConfig] = useState(null);
+  const [showForm, setShowForm] = useState(false);
 
   useEffect(() => {
     fetchArray(`${apiBaseUrl}/inventory/room-types?publicOnly=1`).then((rows) =>
@@ -44,7 +45,7 @@ export default function CustomerPortal({ apiBaseUrl }) {
   };
 
   return (
-    <div className="relative min-h-screen overflow-hidden bg-gradient-to-b from-[#170B08] via-[#2B1610] to-[#1A0D09] text-[#F8F4EC]">
+    <div className="relative min-h-screen flex flex-col overflow-hidden bg-gradient-to-b from-[#170B08] via-[#2B1610] to-[#1A0D09] text-[#F8F4EC]">
       {/* Animated abstract ambient orbs */}
       <div className="pointer-events-none fixed inset-0 overflow-hidden">
         <div
@@ -62,7 +63,7 @@ export default function CustomerPortal({ apiBaseUrl }) {
       </div>
 
       {/* Minimalist top bar with small Staff Login */}
-      <header className="relative z-10 max-w-5xl mx-auto px-4 sm:px-6 pt-4 pb-2 flex items-center justify-between">
+      <header className="relative z-10 w-full max-w-6xl mx-auto px-4 sm:px-6 pt-5 pb-2 flex items-center justify-between">
         <div className="flex items-center gap-2.5">
           <span className="inline-block w-2 h-2 rounded-full bg-[#E3B368] shadow-[0_0_10px_#E3B368]" />
           <span className="text-[11px] uppercase tracking-[0.22em] text-[#F8F4EC]/70">
@@ -71,42 +72,67 @@ export default function CustomerPortal({ apiBaseUrl }) {
         </div>
         <Link
           to="/login"
-          className="inline-flex items-center gap-1.5 rounded-full border border-[#F8F4EC]/15 bg-white/5 backdrop-blur-md px-3 py-1.5 text-xs text-[#F8F4EC]/80 hover:bg-white/15 hover:text-white transition-all"
+          className="inline-flex items-center gap-1.5 rounded-full border border-[#F8F4EC]/15 bg-white/5 backdrop-blur-md px-3.5 py-1.5 text-xs text-[#F8F4EC]/80 hover:bg-white/15 hover:text-white transition-all"
         >
           <LogIn className="w-3 h-3 text-[#E3B368]" /> Staff Login
         </Link>
       </header>
 
-      {/* Luminous animated Mandir Line-Art Hero */}
-      <div className="relative z-10 max-w-3xl mx-auto px-4 pt-3 pb-2 text-center">
-        <div className="relative mx-auto w-full max-w-xl aspect-[1280/676] animate-mandir-float">
-          {/* Soft golden radial aura behind Mandir */}
+      {/* Centered Hero with Mandir Line Art + Request Stay Button */}
+      <main className="relative z-10 flex-1 flex flex-col items-center justify-center px-4 py-8 text-center animate-fade-up">
+        <div className="relative mx-auto w-full max-w-2xl aspect-[1280/676] animate-mandir-float mb-4">
           <div
-            className="absolute inset-x-12 inset-y-6 rounded-full blur-2xl opacity-30"
+            className="absolute inset-x-10 inset-y-6 rounded-full blur-3xl opacity-35"
             style={{ background: 'radial-gradient(ellipse at center, #E3B368 0%, transparent 72%)' }}
           />
-          {/* Luminous gold Mandir SVG line art */}
           <img
             src={`${process.env.PUBLIC_URL}/lineart-jaipur.svg`}
             alt="BAPS Jaipur Mandir"
             className="relative w-full h-full object-contain select-none"
             style={{
-              filter: 'brightness(0) saturate(100%) invert(82%) sepia(32%) saturate(620%) hue-rotate(346deg) drop-shadow(0 0 18px rgba(227,179,104,0.45))',
+              filter: 'brightness(0) saturate(100%) invert(82%) sepia(32%) saturate(620%) hue-rotate(346deg) drop-shadow(0 0 22px rgba(227,179,104,0.45))',
             }}
           />
         </div>
-      </div>
 
-      {/* Main Request Stay Form */}
-      <main className="relative z-10 px-4 pb-14 -mt-4 sm:-mt-8 animate-fade-up">
-        <CustomerBookingForm
-          roomTypes={roomTypes}
-          apiBaseUrl={apiBaseUrl}
-          onSubmit={handleSubmit}
-          termsText={termsText}
-          formConfig={formConfig}
-        />
+        <h1 className="font-serif text-2xl sm:text-4xl text-[#F8F4EC] tracking-wide mb-2">
+          BAPS Jaipur Utara
+        </h1>
+        <p className="text-sm sm:text-base text-[#F8F4EC]/65 max-w-md mb-7">
+          Guest Accommodation &amp; Stay Request Portal
+        </p>
+
+        <button
+          onClick={() => setShowForm(true)}
+          className="inline-flex items-center gap-2.5 rounded-full bg-gradient-to-r from-[#E3B368] via-[#C77A34] to-[#B8792F] text-[#1A0D09] font-medium px-8 py-3.5 text-sm sm:text-base shadow-[0_12px_36px_rgba(227,179,104,0.35)] hover:scale-[1.03] hover:shadow-[0_16px_44px_rgba(227,179,104,0.5)] active:scale-[0.99] transition-all"
+        >
+          <CalendarPlus className="w-4 h-4" />
+          Request a Stay
+        </button>
       </main>
+
+      {/* Request Stay Modal */}
+      {showForm && (
+        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-3 sm:p-6 overflow-y-auto">
+          <div className="relative w-full max-w-2xl my-auto max-h-[92vh] overflow-y-auto rounded-2xl animate-fade-up">
+            <button
+              type="button"
+              onClick={() => setShowForm(false)}
+              aria-label="Close"
+              className="absolute top-4 right-4 z-10 rounded-full bg-[#2B1610]/10 p-1.5 text-[#2B1610]/60 hover:bg-[#2B1610]/20 hover:text-[#2B1610] transition-colors"
+            >
+              <X className="w-5 h-5" />
+            </button>
+            <CustomerBookingForm
+              roomTypes={roomTypes}
+              apiBaseUrl={apiBaseUrl}
+              onSubmit={handleSubmit}
+              termsText={termsText}
+              formConfig={formConfig}
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 }
