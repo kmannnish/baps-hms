@@ -40,18 +40,39 @@ export function AuthProvider({ apiBaseUrl, socketUrl, io, children }) {
     return () => { active = false; };
   }, [apiBaseUrl, session?.token]);
 
-  // (Re)connect the shared socket whenever we have a token
+  // (Re)connect the shared socket whenever we have a token, and refresh
+  // live role permissions from /auth/me so permission changes take effect
+  // without forcing a manual log-out.
   useEffect(() => {
     socketRef.current?.disconnect();
     socketRef.current = null;
 
+    let active = true;
     if (session?.token) {
       const socket = io(socketUrl, { auth: { token: session.token } });
       socketRef.current = socket;
+
+      fetch(`${apiBaseUrl}/auth/me`, {
+        headers: { Authorization: `Bearer ${session.token}` },
+      })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((freshUser) => {
+          if (!active || !freshUser) return;
+          setSession((prev) => {
+            if (!prev) return prev;
+            const next = { ...prev, user: freshUser };
+            try { localStorage.setItem(STORAGE_KEY, JSON.stringify(next)); } catch { /* ignore */ }
+            return next;
+          });
+        })
+        .catch(() => {});
     }
 
-    return () => socketRef.current?.disconnect();
-  }, [session?.token, socketUrl, io]);
+    return () => {
+      active = false;
+      socketRef.current?.disconnect();
+    };
+  }, [session?.token, socketUrl, io, apiBaseUrl]);
 
   const persist = (next) => {
     setSession(next);
