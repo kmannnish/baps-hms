@@ -12,6 +12,7 @@ import EditBookingModal from '../components/EditBookingModal';
 import QRUploadTrigger from '../components/QRUploadTrigger';
 import HistoryReports from '../components/HistoryReports';
 import CancelBookingModal from '../components/CancelBookingModal';
+import IdleScreensaver from '../components/IdleScreensaver';
 import { fetchArray, fetchObject } from '../lib/api';
 import { printReceipt, openWhatsAppReceipt } from '../lib/receipt';
 import { fmtDate } from '../lib/datetime';
@@ -409,6 +410,7 @@ export default function ReceptionPortal() {
 
   return (
     <div className="min-h-screen bg-[#F8F4EC] overflow-x-hidden">
+      <IdleScreensaver />
       <header className="flex items-center justify-between px-4 sm:px-6 py-3.5 sm:py-4 border-b border-[#2B1610]/10 gap-2" onClick={armSound}>
         <div className="min-w-0">
           <h1 className="font-serif text-lg sm:text-xl text-[#2B1610]">Reception</h1>
