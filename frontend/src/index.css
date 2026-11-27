@@ -56,3 +56,12 @@ body {
 .animate-mandir-float {
   animation: mandirFloat 7s ease-in-out infinite;
 }
+
+@keyframes waveInfinite {
+  0% { transform: translate3d(0, 0, 0); }
+  100% { transform: translate3d(-50%, 0, 0); }
+}
+
+.animate-wave-infinite {
+  animation: waveInfinite 24s linear infinite;
+}
